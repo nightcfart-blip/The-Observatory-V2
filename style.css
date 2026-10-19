@@ -1,1 +1,69 @@
 
+:root {
+  color-scheme: dark;
+  --void: #020713;
+  --deep-space: #041022;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--void);
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#universe {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse at 48% 48%,
+      #091b35 0%,
+      #041022 48%,
+      #020713 100%
+    );
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: grab;
+  isolation: isolate;
+}
+
+#universe:active {
+  cursor: grabbing;
+}
+
+#spaceCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+::selection {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #universe {
+    scroll-behavior: auto;
+  }
+}
+
