@@ -1,108 +1,88 @@
-
 "use strict";
 
 window.SPACE_CONFIG = {
-
-  seed: 873621,
+  seed: 615204,
 
   camera: {
     x: 0,
     y: 0,
     zoom: 1,
-    minZoom: 0.48,
-    maxZoom: 2.8
+    minZoom: 0.58,
+    maxZoom: 2.35
   },
 
   rendering: {
-    maxPixelRatio: 1.5,
+    maxPixelRatio: 1.75,
     targetFPS: 40,
-    nebulaCacheSize: 35
+    nebulaCacheSize: 40
   },
 
-  atmosphere: {
-    backgroundTop: "#020713",
-    backgroundMiddle: "#06152c",
-    backgroundBottom: "#020611",
-    nebulaOpacity: 0.84,
-    nebulaDrift: 0.0007
+  scene: {
+    lightDirection: {
+      x: -1,
+      y: -0.08
+    },
+    ambientDrift: 0.00024
   },
 
   nebulae: {
-    cellSize: 1500,
-    density: 0.72,
-
-    // RGB colors for procedural gas clouds.
+    cellSize: 1700,
+    density: 0.66,
+    opacity: 0.82,
     colors: [
-      [24, 76, 164],
-      [30, 110, 194],
-      [46, 90, 207],
-      [12, 129, 177],
-      [73, 58, 158],
-      [94, 70, 194],
-      [21, 159, 193],
-      [15, 47, 113],
-      [115, 91, 200]
+      [16, 55, 118],
+      [24, 80, 155],
+      [18, 109, 173],
+      [66, 90, 188],
+      [45, 135, 206],
+      [93, 110, 220],
+      [10, 35, 84]
     ]
   },
 
   stars: {
-    cellSize: 520,
-
-    // Stars per generated sector.
-    distantCount: 85,
-    middleCount: 50,
-    nearCount: 18,
-
+    cellSize: 560,
+    farCount: 90,
+    midCount: 42,
+    nearCount: 12,
     colors: [
-      "#e8f4ff",
-      "#a8d5ff",
-      "#dae5ff",
       "#ffffff",
-      "#9eb4ff",
-      "#b8fff5",
-      "#ffe9ce"
+      "#d7e8ff",
+      "#b6d6ff",
+      "#f4fbff",
+      "#bfe9ff",
+      "#d8ddff",
+      "#ffe9d4"
     ],
-
-    twinkleSpeed: 0.00045,
-    driftSpeed: 0.001
+    twinkleSpeed: 0.00034
   },
 
   planets: {
-    cellSize: 2500,
-    probability: 0.34,
-    minRadius: 75,
-    maxRadius: 225,
-
-    colors: [
-      ["#081b32", "#17496d", "#3795b8"],
-      ["#0b1636", "#203f83", "#7598d8"],
-      ["#15142f", "#4c437b", "#9c8cbe"],
-      ["#071f31", "#176778", "#71b6c5"],
-      ["#222637", "#566679", "#bdcedb"]
+    cellSize: 2800,
+    probability: 0.25,
+    minRadius: 95,
+    maxRadius: 240,
+    palettes: [
+      ["#081526", "#10334e", "#2d89b2"],
+      ["#0b1535", "#20497c", "#89a7dc"],
+      ["#0a1b2c", "#12546a", "#63aabf"],
+      ["#17172f", "#4f4a75", "#9d96c7"],
+      ["#0c111d", "#39475b", "#b9cfda"]
     ]
   },
 
   asteroids: {
-    cellSize: 720,
-    density: 0.72,
-    maxPerCell: 6,
-    minRadius: 4,
-    maxRadius: 35
+    cellSize: 900,
+    density: 0.38,
+    maxPerCell: 3,
+    minRadius: 8,
+    maxRadius: 34
   },
 
   shootingStars: {
     enabled: true,
-    minDelay: 10000,
-    maxDelay: 28000,
+    minDelay: 14000,
+    maxDelay: 32000,
     duration: 950
-  },
-
-  motion: {
-    stars: true,
-    nebulae: true,
-    planets: true,
-    asteroids: true,
-    shootingStars: true
   }
 };
-
