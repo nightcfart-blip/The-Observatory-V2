@@ -38,6 +38,7 @@
 
   let moonImageLoaded = false;
   let moonImageFailed = false;
+  let moonProcessedCanvas = null;
   const moonImage = new Image();
 
   const settingsPanel = document.getElementById("settingsPanel");
@@ -225,7 +226,6 @@
     if (cached) return cached;
 
     const rnd = rngFor(cellX, cellY, 9137);
-
     const probability = C.nebulae.density * scene.nebulaFrequency;
     if (rnd() > probability) return null;
 
@@ -273,8 +273,8 @@
       const t = rnd() * 2 - 1;
       const x = centerX + Math.cos(angle) * length * t + (rnd() - 0.5) * 180;
       const y = centerY + Math.sin(angle) * length * t + (rnd() - 0.5) * 160;
-
       const chosen = rnd() < 0.33 ? baseA : rnd() < 0.66 ? baseB : baseC;
+
       drawCloud(
         x,
         y,
@@ -369,8 +369,8 @@
 
   function variedStarColor(baseHex, variance, rnd) {
     const rgb = hexToRgb(baseHex);
-
     const drift = variance * 45;
+
     return `rgb(${clamp(Math.round(rgb.r + (rnd() - 0.5) * drift), 0, 255)},
                 ${clamp(Math.round(rgb.g + (rnd() - 0.5) * drift), 0, 255)},
                 ${clamp(Math.round(rgb.b + (rnd() - 0.5) * drift), 0, 255)})`;
@@ -428,10 +428,14 @@
 
         const base = rnd();
         const phase = rnd() * TAU;
-        const twinkle =
-          reducedMotion
-            ? 1
-            : 1 + Math.sin(time * C.stars.twinkleSpeed * scene.starsTwinkle * (0.75 + rnd() * 1.25) + phase) * (0.13 * scene.starsTwinkle);
+        const twinkle = reducedMotion
+          ? 1
+          : 1 + Math.sin(
+              time * C.stars.twinkleSpeed *
+              scene.starsTwinkle *
+              (0.75 + rnd() * 1.25) +
+              phase
+            ) * (0.13 * scene.starsTwinkle);
 
         const pos = project(wx, wy, conf.parallax, scale);
 
@@ -457,10 +461,43 @@
     }
   }
 
+  function preprocessMoonImage() {
+    const off = document.createElement("canvas");
+    off.width = moonImage.naturalWidth || moonImage.width;
+    off.height = moonImage.naturalHeight || moonImage.height;
+
+    const g = off.getContext("2d");
+    g.drawImage(moonImage, 0, 0);
+
+    const imageData = g.getImageData(0, 0, off.width, off.height);
+    const data = imageData.data;
+
+    const clipBelow = C.moon.blackKey.clipBelow;
+    const featherTo = C.moon.blackKey.featherTo;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const gr = data[i + 1];
+      const b = data[i + 2];
+      const lum = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+
+      if (lum <= clipBelow) {
+        data[i + 3] = 0;
+      } else if (lum < featherTo) {
+        const t = (lum - clipBelow) / (featherTo - clipBelow);
+        data[i + 3] = Math.round(data[i + 3] * smoothstep(t));
+      }
+    }
+
+    g.putImageData(imageData, 0, 0);
+    moonProcessedCanvas = off;
+  }
+
   function loadMoonImage() {
     moonImage.onload = () => {
       moonImageLoaded = true;
       moonImageFailed = false;
+      preprocessMoonImage();
     };
 
     moonImage.onerror = () => {
@@ -472,8 +509,55 @@
     moonImage.src = C.moon.imagePath;
   }
 
+  function drawMoonHaze(pos, drawWidth, drawHeight) {
+    const fog = C.moon.fog;
+    const size = Math.max(drawWidth, drawHeight) * fog.size;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    const back = ctx.createRadialGradient(
+      pos.x,
+      pos.y,
+      drawWidth * 0.1,
+      pos.x,
+      pos.y,
+      size * 0.5
+    );
+    back.addColorStop(0, `rgba(${fog.tint[0]},${fog.tint[1]},${fog.tint[2]},${fog.opacity * 0.3})`);
+    back.addColorStop(0.45, `rgba(${fog.tint[0]},${fog.tint[1]},${fog.tint[2]},${fog.opacity})`);
+    back.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = back;
+    circle(pos.x, pos.y, size * 0.5);
+    ctx.fill();
+
+    // soft foreground fog to blend the moon into the scene
+    for (let i = 0; i < 3; i++) {
+      const ox = pos.x + (i - 1) * drawWidth * 0.16;
+      const oy = pos.y + (i - 1) * drawHeight * 0.06;
+      const rx = drawWidth * (0.42 + i * 0.06);
+      const ry = drawHeight * (0.22 + i * 0.03);
+
+      const grad = ctx.createRadialGradient(ox, oy, 0, ox, oy, Math.max(rx, ry));
+      grad.addColorStop(0, `rgba(${fog.tint[0]},${fog.tint[1]},${fog.tint[2]},${fog.opacity * 0.22})`);
+      grad.addColorStop(0.45, `rgba(${fog.tint[0]},${fog.tint[1]},${fog.tint[2]},${fog.opacity * 0.1})`);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+      ctx.fillStyle = grad;
+      circle(0, 0, Math.max(rx, ry));
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
   function drawMoon(time) {
-    if (!moonImageLoaded) return;
+    if (!moonImageLoaded || !moonProcessedCanvas) return;
 
     const m = C.moon;
     const drift = reducedMotion ? 0 : Math.sin(time * 0.00004) * m.driftAmplitude;
@@ -500,33 +584,57 @@
       return;
     }
 
-    // soft distant halo
+    // back haze
+    drawMoonHaze(pos, drawWidth, drawHeight);
+
+    // subtle distant glow
     ctx.save();
     ctx.globalCompositeOperation = "screen";
     const halo = ctx.createRadialGradient(
-      pos.x, pos.y, drawWidth * 0.22,
-      pos.x, pos.y, drawWidth * 0.64
+      pos.x, pos.y, drawWidth * 0.16,
+      pos.x, pos.y, drawWidth * 0.52
     );
-    halo.addColorStop(0, `rgba(255,255,255,${m.glowOpacity * 0.24})`);
-    halo.addColorStop(0.55, `rgba(130,170,210,${m.glowOpacity})`);
+    halo.addColorStop(0, `rgba(255,255,255,${m.glowOpacity * 0.25})`);
+    halo.addColorStop(0.58, `rgba(130,170,210,${m.glowOpacity})`);
     halo.addColorStop(1, "rgba(90,130,180,0)");
     ctx.fillStyle = halo;
-    circle(pos.x, pos.y, drawWidth * 0.64);
+    circle(pos.x, pos.y, drawWidth * 0.52);
     ctx.fill();
     ctx.restore();
 
-    // main moon image
+    // moon image
     ctx.save();
     ctx.globalAlpha = m.opacity;
-    ctx.drawImage(moonImage, left, top, drawWidth, drawHeight);
+    ctx.drawImage(moonProcessedCanvas, left, top, drawWidth, drawHeight);
     ctx.restore();
+
+    // extra shadow pass, so it sits deeper in the scene
+    ctx.save();
+    const shadow = ctx.createRadialGradient(
+      pos.x - drawWidth * 0.18,
+      pos.y - drawHeight * 0.06,
+      drawWidth * 0.06,
+      pos.x + drawWidth * 0.06,
+      pos.y + drawHeight * 0.08,
+      drawWidth * 0.6
+    );
+    shadow.addColorStop(0, "rgba(0,0,0,0)");
+    shadow.addColorStop(0.46, `rgba(0,0,0,${m.shadowStrength * 0.35})`);
+    shadow.addColorStop(1, `rgba(0,0,0,${m.shadowStrength})`);
+
+    ctx.fillStyle = shadow;
+    circle(pos.x, pos.y, Math.max(drawWidth, drawHeight) * 0.5);
+    ctx.fill();
+    ctx.restore();
+
+    // foreground haze again, to break any remaining hard edge
+    drawMoonHaze(pos, drawWidth * 0.95, drawHeight * 0.95);
   }
 
   function scheduleShootingStar(time) {
     const frequency = scene.shootingFrequency;
     const minDelay = lerp(9000, 24000, 1 - Math.min(1, frequency / 2));
     const maxDelay = lerp(15000, 32000, 1 - Math.min(1, frequency / 2));
-
     nextShootingStar = time + lerp(minDelay, maxDelay, Math.random());
   }
 
@@ -708,6 +816,7 @@
     if (C.ambientAudio.startOnFirstGesture) {
       startAmbientAudio();
     }
+
     if (audioCtx && audioCtx.state === "suspended") {
       audioCtx.resume();
     }
