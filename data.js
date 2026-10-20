@@ -14,7 +14,7 @@ window.SPACE_CONFIG = {
   startPoint: {
     x: 0,
     y: 0,
-    zoom: 1
+    zoom: 0.5
   },
 
   rendering: {
@@ -95,12 +95,12 @@ window.SPACE_CONFIG = {
     imagePath: "IMG_8758.jpeg",
 
     // farther back and more off to the side
-    worldX: 1800,
-    worldY: -470,
+    worldX: 700,
+    worldY: -370,
 
     // roughly half the previous size
-    width: 860,
-    height: 860,
+    width: 960,
+    height: 960,
 
     // lower parallax = farther in background
     parallax: 0.22,
@@ -116,11 +116,11 @@ window.SPACE_CONFIG = {
     },
 
     // extra shadow and atmospheric blend
-    shadowStrength: 0.42,
-    glowOpacity: 0.035,
+    shadowStrength: 0.72,
+    glowOpacity: 0.015,
 
     fog: {
-      opacity: 0.22,
+      opacity: 0.12,
       size: 1.34,
       tint: [66, 106, 178]
     }
