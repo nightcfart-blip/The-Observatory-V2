@@ -40,6 +40,7 @@
   const homeBtn = document.getElementById("homeBtn");
 
   const constellationLayer = document.getElementById("constellationLayer");
+  const constellationSvg = document.getElementById("constellationSvg");
   const navButtons = [...constellationLayer.querySelectorAll(".nav-star")];
   const lineABase = document.getElementById("lineA-base");
   const lineBBase = document.getElementById("lineB-base");
@@ -47,57 +48,57 @@
   const lineBGlow = document.getElementById("lineB-glow");
 
   const CONSTELLATION_STARS = [
-    {
-      panel: "settings",
-      worldX: -290,
-      worldY: -80,
-      depth: 1.08,
-      size: 13,
-      tint: "192,214,255",
-      breathe: "7.1s",
-      labelOffsetY: 0
-    },
-    {
-      panel: "library",
-      worldX: -160,
-      worldY: -250,
-      depth: 1.08,
-      size: 18,
-      tint: "223,232,255",
-      breathe: "8.4s",
-      labelOffsetY: -2
-    },
-    {
-      panel: "creation",
-      worldX: 18,
-      worldY: -165,
-      depth: 1.1,
-      size: 22,
-      tint: "178,188,255",
-      breathe: "6.8s",
-      labelOffsetY: 0
-    },
-    {
-      panel: "watchlist",
-      worldX: 220,
-      worldY: -300,
-      depth: 1.1,
-      size: 15,
-      tint: "184,231,255",
-      breathe: "8.9s",
-      labelOffsetY: -2
-    },
-    {
-      panel: "statistics",
-      worldX: 150,
-      worldY: 18,
-      depth: 1.09,
-      size: 16,
-      tint: "201,182,255",
-      breathe: "7.6s",
-      labelOffsetY: 2
-    }
-  ];
+  {
+    panel: "settings",
+    worldX: -290,
+    worldY: -80,
+    depth: 1.08,
+    size: 11,
+    tint: "192,214,255",
+    breathe: "7.1s",
+    labelOffsetY: 0
+  },
+  {
+    panel: "library",
+    worldX: -160,
+    worldY: -250,
+    depth: 1.08,
+    size: 14,
+    tint: "223,232,255",
+    breathe: "8.4s",
+    labelOffsetY: -2
+  },
+  {
+    panel: "creation",
+    worldX: 18,
+    worldY: -165,
+    depth: 1.1,
+    size: 17,
+    tint: "178,188,255",
+    breathe: "6.8s",
+    labelOffsetY: 0
+  },
+  {
+    panel: "watchlist",
+    worldX: 220,
+    worldY: -300,
+    depth: 1.1,
+    size: 12,
+    tint: "184,231,255",
+    breathe: "8.9s",
+    labelOffsetY: -2
+  },
+  {
+    panel: "statistics",
+    worldX: 150,
+    worldY: 18,
+    depth: 1.09,
+    size: 13,
+    tint: "201,182,255",
+    breathe: "7.6s",
+    labelOffsetY: 2
+  }
+];
 
   const LINE_GROUPS = [
     [0, 1, 2, 3],
@@ -844,43 +845,100 @@
     }).join(" ");
   }
 
-  function updateConstellation() {
-    const projected = [];
+  
+function updateConstellation() {
+  if (!constellationSvg) return;
 
-    CONSTELLATION_STARS.forEach((star, index) => {
-      const button = navButtons[index];
-      if (!button) return;
+  // Match SVG coordinates to actual screen pixels.
+  constellationSvg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
-      const p = project(star.worldX, star.worldY, star.depth, camera.zoom);
-      projected.push(p);
+  const projected = [];
 
-      const scale = clamp(Math.pow(camera.zoom, 0.22), 0.85, 1.23);
+  CONSTELLATION_STARS.forEach((star, index) => {
+    const button = navButtons[index];
+    if (!button) return;
 
-      button.style.left = `${p.x}px`;
-      button.style.top = `${p.y}px`;
-      button.style.setProperty("--star-scale", scale.toFixed(3));
-      button.style.setProperty("--star-size", `${star.size}px`);
-      button.style.setProperty("--star-tint", star.tint);
-      button.style.setProperty("--star-breathe", star.breathe);
+    const p = project(
+      star.worldX,
+      star.worldY,
+      star.depth,
+      camera.zoom
+    );
 
-      const label = button.querySelector(".star-label");
-      if (label) {
-        label.style.marginTop = `${star.labelOffsetY}px`;
-      }
+    projected.push(p);
 
-      const visible = p.x > -70 && p.x < W + 70 && p.y > -70 && p.y < H + 70;
-      button.style.opacity = visible ? "1" : "0";
-      button.style.pointerEvents = visible ? "auto" : "none";
-    });
+    const scale = clamp(
+      Math.pow(camera.zoom, 0.2),
+      0.88,
+      1.18
+    );
 
-    const pathA = polylinePath(LINE_GROUPS[0], projected);
-    const pathB = polylinePath(LINE_GROUPS[1], projected);
+    button.style.left = `${p.x}px`;
+    button.style.top = `${p.y}px`;
 
-    lineABase.setAttribute("d", pathA);
-    lineBBase.setAttribute("d", pathB);
-    lineAGlow.setAttribute("d", pathA);
-    lineBGlow.setAttribute("d", pathB);
+    button.style.setProperty(
+      "--star-scale",
+      scale.toFixed(3)
+    );
+
+    button.style.setProperty(
+      "--star-size",
+      `${star.size}px`
+    );
+
+    button.style.setProperty(
+      "--star-tint",
+      star.tint
+    );
+
+    button.style.setProperty(
+      "--star-breathe",
+      star.breathe
+    );
+
+    const label = button.querySelector(".star-label");
+
+    if (label) {
+      label.style.marginTop = `${star.labelOffsetY}px`;
+    }
+
+    const visible =
+      p.x > -80 &&
+      p.x < W + 80 &&
+      p.y > -80 &&
+      p.y < H + 80;
+
+    button.style.opacity = visible ? "1" : "0";
+
+    button.style.pointerEvents = visible
+      ? "auto"
+      : "none";
+  });
+
+  function makePath(indices) {
+    return indices
+      .map((index, i) => {
+        const p = projected[index];
+
+        if (!p) {
+          return i === 0 ? "M 0 0" : "L 0 0";
+        }
+
+        return `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`;
+      })
+      .join(" ");
   }
+
+  const pathA = makePath(LINE_GROUPS[0]);
+  const pathB = makePath(LINE_GROUPS[1]);
+
+  lineABase.setAttribute("d", pathA);
+  lineBBase.setAttribute("d", pathB);
+
+  lineAGlow.setAttribute("d", pathA);
+  lineBGlow.setAttribute("d", pathB);
+}
+
 
   // -------------------------------
   // input
