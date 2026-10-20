@@ -655,154 +655,50 @@ class WatchArchiveStore {
     };
   }
 
+  
   generateConstellation({
     type,
     id,
-    starCount = ARCHIVE_CONFIG.constellation.defaultStars,
     center = null,
     parentCenter = null
   }) {
     const config = ARCHIVE_CONFIG.constellation;
-    const count = Math.round(
-      Math.max(
-        config.minStars,
-        Math.min(config.maxStars, Number(starCount) || 7)
-      )
-    );
-
     const seed = ArchiveUtil.hashString(id);
     const random = ArchiveUtil.seeded(seed);
 
     const location = center ||
       this.constellationCenter(parentCenter, seed);
 
-    const radius = type === "group"
-      ? config.groupRadius
-      : type === "season"
-        ? config.seasonRadius
-        : config.productionRadius;
-
-    const shape = Math.floor(random() * 5);
-    const rotation = random() * Math.PI * 2;
-    const stretchX = .55 + random() * .85;
-    const stretchY = .45 + random() * .95;
-
-    const stars = [];
-
-    for (let i = 0; i < count; i++) {
-      const t = count === 1 ? 0 : i / (count - 1);
-
-      let x = 0;
-      let y = 0;
-
-      if (shape === 0) {
-        const angle = t * Math.PI * 2;
-        const r = radius * (.35 + random() * .55);
-        x = Math.cos(angle) * r;
-        y = Math.sin(angle) * r;
-      }
-
-      else if (shape === 1) {
-        x = (t - .5) * radius * 1.7;
-        y = Math.sin(t * Math.PI * 2.2) *
-          radius * (.24 + random() * .25);
-      }
-
-      else if (shape === 2) {
-        const angle = t * Math.PI * (2.2 + random());
-        const r = radius * (.15 + t * .82);
-        x = Math.cos(angle) * r;
-        y = Math.sin(angle) * r;
-      }
-
-      else if (shape === 3) {
-        const angle = random() * Math.PI * 2;
-        const r = Math.sqrt(random()) * radius;
-        x = Math.cos(angle) * r;
-        y = Math.sin(angle) * r;
-      }
-
-      else {
-        const branch = i % 3;
-        x = (t - .5) * radius * 1.45;
-        y = (branch - 1) * radius * .47 +
-          (random() - .5) * radius * .25;
-      }
-
-      // Perturb positions so the pattern isn't geometric.
-      x += (random() - .5) * radius * .24;
-      y += (random() - .5) * radius * .24;
-
-      x *= stretchX;
-      y *= stretchY;
-
-      const rx = x * Math.cos(rotation) -
-        y * Math.sin(rotation);
-
-      const ry = x * Math.sin(rotation) +
-        y * Math.cos(rotation);
-
-      const sizes = type === "group"
+    const sizes =
+      type === "group"
         ? config.groupStarSize
         : type === "season"
           ? config.seasonStarSize
           : config.productionStarSize;
 
-      stars.push({
-        id: ArchiveUtil.id("star"),
-        x: rx,
-        y: ry,
+    const star = {
+      id: ArchiveUtil.id("star"),
+      x: 0,
+      y: 0,
 
-        size: sizes[0] +
-          random() * (sizes[1] - sizes[0]),
+      size: sizes[0] +
+        random() * (sizes[1] - sizes[0]),
 
-        tint: config.colors[
-          Math.floor(random() * config.colors.length)
-        ],
+      tint: config.colors[
+        Math.floor(random() * config.colors.length)
+      ],
 
-        brightness: .55 + random() * .45,
-        twinklePhase: random() * Math.PI * 2
-      });
-    }
-
-    // Connect each star to its nearest existing point,
-    // building a varied tree rather than one fixed shape.
-    const links = [];
-
-    for (let i = 1; i < stars.length; i++) {
-      let nearest = 0;
-      let smallest = Infinity;
-
-      for (let j = 0; j < i; j++) {
-        const distance = Math.hypot(
-          stars[i].x - stars[j].x,
-          stars[i].y - stars[j].y
-        );
-
-        if (distance < smallest) {
-          nearest = j;
-          smallest = distance;
-        }
-      }
-
-      links.push([nearest, i]);
-    }
-
-    // A few extra connections create more varied geometry.
-    if (count >= 5 && random() > .35) {
-      const a = Math.floor(random() * count);
-      const b = (a + 2 + Math.floor(random() * (count - 2))) % count;
-
-      if (a !== b) links.push([a, b]);
-    }
+      brightness: 0.65 + random() * 0.35,
+      twinklePhase: random() * Math.PI * 2
+    };
 
     return {
       center: location,
-      count,
-      shape,
-      rotation,
-      stars,
-      links,
+      count: 1,
+      shape: 0,
+      rotation: 0,
+      stars: [star],
+      links: [],
       seed
     };
   }
