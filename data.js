@@ -7,14 +7,14 @@ window.SPACE_CONFIG = {
     x: 0,
     y: 0,
     zoom: 1,
-    minZoom: 0.35,
-    maxZoom: 2.0
+    minZoom: 0.45,
+    maxZoom: 2.5
   },
 
   startPoint: {
     x: 0,
     y: 0,
-    zoom: 0.5
+    zoom: 0.78
   },
 
   rendering: {
@@ -94,34 +94,36 @@ window.SPACE_CONFIG = {
   moon: {
     imagePath: "IMG_8758.jpeg",
 
-    // farther back and more off to the side
-    worldX: 700,
-    worldY: -370,
+    // more centered, but still slightly elevated
+    worldX: 1280,
+    worldY: -380,
 
-    // roughly half the previous size
-    width: 960,
-    height: 960,
+    // keep it present, but farther back and grander
+    width: 920,
+    height: 920,
 
-    // lower parallax = farther in background
-    parallax: 0.22,
-    scaleFactor: 0.82,
+    // farther in background
+    parallax: 0.18,
+    scaleFactor: 0.74,
 
-    opacity: 0.78,
+    // fully solid moon
+    opacity: 1,
     driftAmplitude: 0.9,
 
-    // removes the harsh black-square feel
+    // keep black background removed, but preserve solid moon body
     blackKey: {
-      clipBelow: 10,
-      featherTo: 42
+      clipBelow: 8,
+      featherTo: 20
     },
 
-    // extra shadow and atmospheric blend
-    shadowStrength: 0.72,
-    glowOpacity: 0.015,
+    // more shadow, less glow
+    shadowStrength: 0.6,
+    glowOpacity: 0.012,
 
+    // much more subtle fog
     fog: {
-      opacity: 0.12,
-      size: 1.34,
+      opacity: 0.055,
+      size: 1.12,
       tint: [66, 106, 178]
     }
   },
