@@ -467,6 +467,38 @@ class WatchArchiveStore {
         }
       };
 
+      // Upgrade older multi-star constellations.
+      // Keep their existing world position and primary star.
+      for (const collection of [
+        fresh.groups,
+        fresh.productions,
+        fresh.seasons
+      ]) {
+        for (const item of collection) {
+          const constellation = item.constellation;
+          if (!constellation) continue;
+
+          const first = constellation.stars?.[0];
+
+                    if (!first || constellation.stars.length === 1 &&
+              first.x === 0 && first.y === 0) continue;
+
+          // Preserve the actual position of the old
+          // primary star rather than moving the entry.
+          constellation.center.x += first.x || 0;
+          constellation.center.y += first.y || 0;
+
+          constellation.stars = [{
+            ...first,
+            x: 0,
+            y: 0
+          }];
+
+          constellation.count = 1;
+          constellation.links = [];
+        }
+      }
+
       this.data = fresh;
 
     } catch (error) {
