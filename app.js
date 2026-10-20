@@ -35,8 +35,10 @@
   let audioStarted = false;
   let audioCtx = null;
   let masterGain = null;
-  let noiseGain = null;
-  let humGain = null;
+
+  let moonImageLoaded = false;
+  let moonImageFailed = false;
+  const moonImage = new Image();
 
   const settingsPanel = document.getElementById("settingsPanel");
   const settingsBtn = document.getElementById("settingsBtn");
@@ -455,160 +457,69 @@
     }
   }
 
-  function drawPlanet(time) {
-    const p = C.planet;
-    const drift = reducedMotion ? 0 : Math.sin(time * 0.000045) * 2;
+  function loadMoonImage() {
+    moonImage.onload = () => {
+      moonImageLoaded = true;
+      moonImageFailed = false;
+    };
 
-    const pos = project(p.worldX + drift, p.worldY - drift * 0.25, 0.86, camera.zoom * 0.96);
-    const r = p.radius * camera.zoom * 0.96;
+    moonImage.onerror = () => {
+      moonImageLoaded = false;
+      moonImageFailed = true;
+      console.warn("Moon image failed to load. Make sure IMG_8758.jpeg is in the same folder as index.html.");
+    };
 
-    if (pos.x + r < -100 || pos.x - r > W + 100 || pos.y + r < -100 || pos.y - r > H + 100) {
+    moonImage.src = C.moon.imagePath;
+  }
+
+  function drawMoon(time) {
+    if (!moonImageLoaded) return;
+
+    const m = C.moon;
+    const drift = reducedMotion ? 0 : Math.sin(time * 0.00004) * m.driftAmplitude;
+
+    const pos = project(
+      m.worldX + drift,
+      m.worldY - drift * 0.18,
+      m.parallax,
+      camera.zoom * m.scaleFactor
+    );
+
+    const drawWidth = m.width * camera.zoom * m.scaleFactor;
+    const drawHeight = m.height * camera.zoom * m.scaleFactor;
+
+    const left = pos.x - drawWidth / 2;
+    const top = pos.y - drawHeight / 2;
+
+    if (
+      left > W + 200 ||
+      top > H + 200 ||
+      left + drawWidth < -200 ||
+      top + drawHeight < -200
+    ) {
       return;
     }
 
-    const oceanDeep = hexToRgb(p.baseColors.deepOcean);
-    const oceanShallow = hexToRgb(p.baseColors.shallowOcean);
-    const brightShelf = hexToRgb(p.baseColors.brightShelf);
-    const land = hexToRgb(p.baseColors.land);
-    const highland = hexToRgb(p.baseColors.highland);
-    const cloud = hexToRgb(p.baseColors.clouds);
-
-    // Outer atmosphere halo
-    const halo = ctx.createRadialGradient(pos.x, pos.y, r * 0.78, pos.x, pos.y, r * 1.18);
-    halo.addColorStop(0, "rgba(90, 180, 230, 0.02)");
-    halo.addColorStop(0.76, p.atmosphereColor);
-    halo.addColorStop(1, "rgba(90, 180, 230, 0)");
-    ctx.fillStyle = halo;
-    circle(pos.x, pos.y, r * 1.18);
-    ctx.fill();
-
+    // soft distant halo
     ctx.save();
-    circle(pos.x, pos.y, r);
-    ctx.clip();
-
-    // Base ocean sphere
-    let surface = ctx.createLinearGradient(pos.x - r, pos.y - r, pos.x + r * 0.7, pos.y + r);
-    surface.addColorStop(0, `rgb(${brightShelf.r},${brightShelf.g},${brightShelf.b})`);
-    surface.addColorStop(0.28, `rgb(${oceanShallow.r},${oceanShallow.g},${oceanShallow.b})`);
-    surface.addColorStop(0.66, `rgb(${oceanDeep.r},${oceanDeep.g},${oceanDeep.b})`);
-    surface.addColorStop(1, "rgb(8,22,34)");
-    ctx.fillStyle = surface;
-    ctx.fillRect(pos.x - r, pos.y - r, r * 2, r * 2);
-
-    const rnd = mulberry32(C.seed + 2027);
-
-    // Land / texture masses
-    for (let i = 0; i < 34; i++) {
-      const px = pos.x + (rnd() * 2 - 1) * r * 0.74;
-      const py = pos.y + (rnd() * 2 - 1) * r * 0.74;
-      const rx = r * (0.05 + rnd() * 0.24);
-      const ry = rx * (0.45 + rnd() * 0.9);
-      const rot = rnd() * TAU;
-
-      const local = rnd() < 0.72 ? land : highland;
-
-      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
-      grad.addColorStop(0, `rgba(${local.r},${local.g},${local.b},${0.28 + rnd() * 0.22})`);
-      grad.addColorStop(0.6, `rgba(${local.r},${local.g},${local.b},${0.16 + rnd() * 0.12})`);
-      grad.addColorStop(1, `rgba(${local.r},${local.g},${local.b},0)`);
-
-      ctx.save();
-      ctx.translate(px, py);
-      ctx.rotate(rot);
-      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-      ctx.fillStyle = grad;
-      circle(0, 0, Math.max(rx, ry));
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Coastal bright shelf / water pattern
-    for (let i = 0; i < 22; i++) {
-      const px = pos.x + (rnd() * 2 - 1) * r * 0.7;
-      const py = pos.y + (rnd() * 2 - 1) * r * 0.7;
-      const rx = r * (0.05 + rnd() * 0.18);
-      const ry = rx * (0.28 + rnd() * 0.65);
-
-      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
-      grad.addColorStop(0, `rgba(${brightShelf.r},${brightShelf.g},${brightShelf.b},${0.12 + rnd() * 0.12})`);
-      grad.addColorStop(1, `rgba(${brightShelf.r},${brightShelf.g},${brightShelf.b},0)`);
-
-      ctx.save();
-      ctx.translate(px, py);
-      ctx.rotate(rnd() * TAU);
-      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-      ctx.fillStyle = grad;
-      circle(0, 0, Math.max(rx, ry));
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Fine cloud bands / wisps
-    for (let i = 0; i < 24; i++) {
-      const y = pos.y + (rnd() * 2 - 1) * r;
-      const width = r * (0.5 + rnd() * 0.55);
-      const height = Math.max(2, r * (0.012 + rnd() * 0.035));
-
-      ctx.fillStyle = `rgba(${cloud.r},${cloud.g},${cloud.b},${0.05 + rnd() * 0.08})`;
-      ctx.beginPath();
-      ctx.ellipse(
-        pos.x + (rnd() - 0.5) * r * 0.12,
-        y,
-        width,
-        height,
-        (rnd() - 0.5) * 0.07,
-        0,
-        TAU
-      );
-      ctx.fill();
-    }
-
-    // brighter cloud clusters
-    for (let i = 0; i < 18; i++) {
-      const px = pos.x + (rnd() * 2 - 1) * r * 0.78;
-      const py = pos.y + (rnd() * 2 - 1) * r * 0.78;
-      const rx = r * (0.05 + rnd() * 0.12);
-      const ry = rx * (0.35 + rnd() * 0.45);
-
-      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
-      grad.addColorStop(0, `rgba(${cloud.r},${cloud.g},${cloud.b},${0.12 + rnd() * 0.18})`);
-      grad.addColorStop(1, `rgba(${cloud.r},${cloud.g},${cloud.b},0)`);
-
-      ctx.save();
-      ctx.translate(px, py);
-      ctx.rotate(rnd() * TAU);
-      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-      ctx.fillStyle = grad;
-      circle(0, 0, Math.max(rx, ry));
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Directional lighting / half shadow
-    const light = ctx.createRadialGradient(
-      pos.x - r * 0.58,
-      pos.y - r * 0.42,
-      r * 0.06,
-      pos.x + r * 0.1,
-      pos.y + r * 0.06,
-      r * 1.35
+    ctx.globalCompositeOperation = "screen";
+    const halo = ctx.createRadialGradient(
+      pos.x, pos.y, drawWidth * 0.22,
+      pos.x, pos.y, drawWidth * 0.64
     );
-    light.addColorStop(0, "rgba(255,255,255,0.28)");
-    light.addColorStop(0.18, "rgba(255,255,255,0.12)");
-    light.addColorStop(0.42, "rgba(255,255,255,0.02)");
-    light.addColorStop(0.62, "rgba(0,0,0,0.08)");
-    light.addColorStop(0.8, "rgba(0,0,0,0.48)");
-    light.addColorStop(1, "rgba(0,0,0,0.96)");
-    ctx.fillStyle = light;
-    ctx.fillRect(pos.x - r, pos.y - r, r * 2, r * 2);
-
+    halo.addColorStop(0, `rgba(255,255,255,${m.glowOpacity * 0.24})`);
+    halo.addColorStop(0.55, `rgba(130,170,210,${m.glowOpacity})`);
+    halo.addColorStop(1, "rgba(90,130,180,0)");
+    ctx.fillStyle = halo;
+    circle(pos.x, pos.y, drawWidth * 0.64);
+    ctx.fill();
     ctx.restore();
 
-    // Atmosphere rim
-    ctx.strokeStyle = "rgba(175, 230, 255, 0.22)";
-    ctx.lineWidth = Math.max(1, r * 0.008);
-    circle(pos.x, pos.y, r);
-    ctx.stroke();
+    // main moon image
+    ctx.save();
+    ctx.globalAlpha = m.opacity;
+    ctx.drawImage(moonImage, left, top, drawWidth, drawHeight);
+    ctx.restore();
   }
 
   function scheduleShootingStar(time) {
@@ -698,13 +609,6 @@
       masterGain.gain.value = scene.ambientVolume;
       masterGain.connect(audioCtx.destination);
 
-      noiseGain = audioCtx.createGain();
-      noiseGain.gain.value = 0.9;
-
-      humGain = audioCtx.createGain();
-      humGain.gain.value = 0.08;
-
-      // White noise buffer
       const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
 
@@ -725,6 +629,12 @@
       highpass.type = "highpass";
       highpass.frequency.value = 60;
       highpass.Q.value = 0.4;
+
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.9;
+
+      const humGain = audioCtx.createGain();
+      humGain.gain.value = 0.08;
 
       const osc = audioCtx.createOscillator();
       osc.type = "sine";
@@ -930,7 +840,6 @@
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
 
-  // Wheel / trackpad = pan only, never zoom
   canvas.addEventListener("wheel", event => {
     event.preventDefault();
 
@@ -970,8 +879,8 @@
     drawBackground();
     drawStarLayer(0, sceneTime);
     drawNebulae(sceneTime);
+    drawMoon(sceneTime);
     drawStarLayer(1, sceneTime);
-    drawPlanet(sceneTime);
     drawStarLayer(2, sceneTime);
     drawShootingStars(time);
 
@@ -986,6 +895,7 @@
   resize();
   bindSettings();
   resetToStart();
+  loadMoonImage();
   requestAnimationFrame(render);
 
   window.SpaceUniverse = {
