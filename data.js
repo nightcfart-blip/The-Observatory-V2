@@ -5,17 +5,13 @@ window.SPACE_CONFIG = {
   seed: 1062417,
 
   camera: {
-    x: 0,
-    y: 0,
-    zoom: 1,
-    minZoom: 0.35,
-    maxZoom: 2.25
+    x: 0, y: 0, zoom: 1,
+    minZoom: 0.45,
+    maxZoom: 2.5
   },
 
   startPoint: {
-    x: 0,
-    y: 0,
-    zoom: 0.75
+    x: 0, y: 0, zoom: 1
   },
 
   rendering: {
@@ -70,19 +66,18 @@ window.SPACE_CONFIG = {
     driftSpeed: 0.00012,
 
     palette: [
-      [35, 80, 170],
-      [48, 108, 205],
-      [74, 89, 210],
-      [28, 155, 214],
-      [99, 71, 205],
-      [129, 102, 231],
-      [59, 189, 221],
-      [104, 140, 255]
+      [35,80,170],
+      [48,108,205],
+      [74,89,210],
+      [28,155,214],
+      [99,71,205],
+      [129,102,231],
+      [59,189,221],
+      [104,140,255]
     ],
 
     layers: [
       {
-        name: "distant",
         cellSize: 2300,
         density: 0.75,
         parallax: 0.12,
@@ -94,9 +89,7 @@ window.SPACE_CONFIG = {
         diffuse: 1.6,
         drift: 0.3
       },
-
       {
-        name: "background",
         cellSize: 1850,
         density: 0.68,
         parallax: 0.29,
@@ -108,9 +101,7 @@ window.SPACE_CONFIG = {
         diffuse: 1.25,
         drift: 0.55
       },
-
       {
-        name: "midground",
         cellSize: 1650,
         density: 0.56,
         parallax: 0.58,
@@ -122,9 +113,7 @@ window.SPACE_CONFIG = {
         diffuse: 1,
         drift: 1
       },
-
       {
-        name: "foreground",
         cellSize: 2000,
         density: 0.27,
         parallax: 1.12,
