@@ -8,41 +8,80 @@
   if (!C || !canvas || !ctx) return;
 
   const TAU = Math.PI * 2;
+  const camera = { ...C.camera };
+  const startPoint = { ...C.startPoint };
+
+  const pointers = new Map();
+  const nebulaCache = new Map();
+
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const camera = { ...C.camera };
-  const pointers = new Map();
-
-  const nebulaCache = new Map();
-  const planetCache = new Map();
-  const asteroidCache = new Map();
+  const scene = {
+    ...C.baseScene
+  };
 
   let W = 0;
   let H = 0;
   let DPR = 1;
 
-  let lastFrameTime = 0;
-  let lastAnimationTime = 0;
-  let universeTime = 0;
-
   let pinchState = null;
+  let lastFrame = 0;
+  let previousTime = 0;
+  let sceneTime = 0;
+
   let shootingStar = null;
   let nextShootingStar = 0;
 
   let audioStarted = false;
   let audioCtx = null;
   let masterGain = null;
+  let noiseGain = null;
+  let humGain = null;
 
-  // -------------------------------------------------
-  // Utilities
-  // -------------------------------------------------
+  const settingsPanel = document.getElementById("settingsPanel");
+  const settingsBtn = document.getElementById("settingsBtn");
+  const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+  const homeBtn = document.getElementById("homeBtn");
+
+  const controls = {
+    starsAmount: document.getElementById("starsAmount"),
+    starsBrightness: document.getElementById("starsBrightness"),
+    starsColorVariance: document.getElementById("starsColorVariance"),
+    starsTwinkle: document.getElementById("starsTwinkle"),
+
+    shootingFrequency: document.getElementById("shootingFrequency"),
+
+    nebulaColorVariance: document.getElementById("nebulaColorVariance"),
+    nebulaBrightness: document.getElementById("nebulaBrightness"),
+    nebulaSize: document.getElementById("nebulaSize"),
+    nebulaFrequency: document.getElementById("nebulaFrequency"),
+
+    ambientVolume: document.getElementById("ambientVolume")
+  };
+
+  const outputs = {
+    starsAmount: document.getElementById("starsAmountValue"),
+    starsBrightness: document.getElementById("starsBrightnessValue"),
+    starsColorVariance: document.getElementById("starsColorVarianceValue"),
+    starsTwinkle: document.getElementById("starsTwinkleValue"),
+
+    shootingFrequency: document.getElementById("shootingFrequencyValue"),
+
+    nebulaColorVariance: document.getElementById("nebulaColorVarianceValue"),
+    nebulaBrightness: document.getElementById("nebulaBrightnessValue"),
+    nebulaSize: document.getElementById("nebulaSizeValue"),
+    nebulaFrequency: document.getElementById("nebulaFrequencyValue"),
+
+    ambientVolume: document.getElementById("ambientVolumeValue")
+  };
 
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const smoothstep = t => {
+
+  function smoothstep(t) {
     t = clamp(t, 0, 1);
     return t * t * (3 - 2 * t);
-  };
+  }
 
   function hash(a, b, salt = 0) {
     let n =
@@ -70,8 +109,8 @@
     return mulberry32((hash(x, y, salt) * 4294967295) >>> 0);
   }
 
-  function choose(list, rnd) {
-    return list[Math.floor(rnd() * list.length)];
+  function choose(array, rnd) {
+    return array[Math.floor(rnd() * array.length)];
   }
 
   function circle(x, y, r) {
@@ -84,34 +123,22 @@
   }
 
   function hexToRgb(hex) {
-    const normalized = hex.replace("#", "");
-    const bigint = parseInt(normalized, 16);
+    const n = hex.replace("#", "");
+    const i = parseInt(n, 16);
     return {
-      r: (bigint >> 16) & 255,
-      g: (bigint >> 8) & 255,
-      b: bigint & 255
+      r: (i >> 16) & 255,
+      g: (i >> 8) & 255,
+      b: i & 255
     };
   }
 
-  function cacheGet(map, key) {
-    if (!map.has(key)) return null;
-    const value = map.get(key);
-    map.delete(key);
-    map.set(key, value);
-    return value;
+  function adjustRgb(rgb, amount) {
+    return [
+      clamp(Math.round(rgb[0] * amount), 0, 255),
+      clamp(Math.round(rgb[1] * amount), 0, 255),
+      clamp(Math.round(rgb[2] * amount), 0, 255)
+    ];
   }
-
-  function cacheSet(map, key, value, maxSize) {
-    map.set(key, value);
-    while (map.size > maxSize) {
-      const oldest = map.keys().next().value;
-      map.delete(oldest);
-    }
-  }
-
-  // -------------------------------------------------
-  // Resize / Projection
-  // -------------------------------------------------
 
   function resize() {
     W = window.innerWidth;
@@ -134,29 +161,43 @@
   }
 
   function visibleCells(cellSize, parallax = 1, scale = camera.zoom) {
-    const worldHalfW = W / (2 * scale);
-    const worldHalfH = H / (2 * scale);
+    const halfW = W / (2 * scale);
+    const halfH = H / (2 * scale);
 
-    const centerX = camera.x * parallax;
-    const centerY = camera.y * parallax;
+    const cx = camera.x * parallax;
+    const cy = camera.y * parallax;
 
-    const minX = Math.floor((centerX - worldHalfW) / cellSize) - 1;
-    const maxX = Math.ceil((centerX + worldHalfW) / cellSize) + 1;
-    const minY = Math.floor((centerY - worldHalfH) / cellSize) - 1;
-    const maxY = Math.ceil((centerY + worldHalfH) / cellSize) + 1;
+    const minX = Math.floor((cx - halfW) / cellSize) - 1;
+    const maxX = Math.ceil((cx + halfW) / cellSize) + 1;
+    const minY = Math.floor((cy - halfH) / cellSize) - 1;
+    const maxY = Math.ceil((cy + halfH) / cellSize) + 1;
 
-    const out = [];
-    for (let gy = minY; gy <= maxY; gy++) {
-      for (let gx = minX; gx <= maxX; gx++) {
-        out.push({ x: gx, y: gy });
+    const cells = [];
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        cells.push({ x, y });
       }
     }
-    return out;
+
+    return cells;
   }
 
-  // -------------------------------------------------
-  // Background
-  // -------------------------------------------------
+  function cacheGet(map, key) {
+    if (!map.has(key)) return null;
+    const value = map.get(key);
+    map.delete(key);
+    map.set(key, value);
+    return value;
+  }
+
+  function cacheSet(map, key, value, maxSize) {
+    map.set(key, value);
+    while (map.size > maxSize) {
+      const oldest = map.keys().next().value;
+      map.delete(oldest);
+    }
+  }
 
   function drawBackground() {
     const bg = ctx.createLinearGradient(0, 0, 0, H);
@@ -166,12 +207,8 @@
     ctx.fillRect(0, 0, W, H);
 
     const vignette = ctx.createRadialGradient(
-      W * 0.5,
-      H * 0.48,
-      Math.min(W, H) * 0.12,
-      W * 0.5,
-      H * 0.5,
-      Math.max(W, H) * 0.74
+      W * 0.5, H * 0.45, Math.min(W, H) * 0.1,
+      W * 0.5, H * 0.5, Math.max(W, H) * 0.74
     );
     vignette.addColorStop(0, "rgba(0,0,0,0)");
     vignette.addColorStop(1, `rgba(0,0,0,${C.sky.vignetteStrength})`);
@@ -180,47 +217,39 @@
     ctx.fillRect(0, 0, W, H);
   }
 
-  // -------------------------------------------------
-  // Nebulae (more photographic / less cartoony)
-  // -------------------------------------------------
-
-  function generateNebulaSprite(cellX, cellY) {
-    const key = `${cellX}:${cellY}`;
-    const cached = cacheGet(nebulaCache, key);
+  function buildNebulaSprite(cellX, cellY) {
+    const cacheKey = `${cellX}:${cellY}:${scene.nebulaColorVariance.toFixed(2)}:${scene.nebulaBrightness.toFixed(2)}`;
+    const cached = cacheGet(nebulaCache, cacheKey);
     if (cached) return cached;
 
-    const rnd = rngFor(cellX, cellY, 8101);
-    if (rnd() > C.nebulae.density) return null;
+    const rnd = rngFor(cellX, cellY, 9137);
+
+    const probability = C.nebulae.density * scene.nebulaFrequency;
+    if (rnd() > probability) return null;
 
     const size = 1024;
     const off = document.createElement("canvas");
     off.width = off.height = size;
     const g = off.getContext("2d");
 
-    const base1 = choose(C.nebulae.palette, rnd);
-    const base2 = choose(C.nebulae.palette, rnd);
-    const base3 = choose(C.nebulae.palette, rnd);
+    const palette = C.nebulae.palette;
+    const baseA = choose(palette, rnd);
+    const baseB = choose(palette, rnd);
+    const baseC = choose(palette, rnd);
 
-    g.clearRect(0, 0, size, size);
-    g.globalCompositeOperation = "screen";
+    const colorBoost = 0.9 + scene.nebulaColorVariance * 0.55;
 
-    const strands = 4 + Math.floor(rnd() * 4);
-    const angle = rnd() * TAU;
-    const centerX = size * (0.42 + rnd() * 0.16);
-    const centerY = size * (0.42 + rnd() * 0.16);
-    const overallLength = 240 + rnd() * 220;
-
-    function blob(x, y, rx, ry, col, alpha) {
+    function drawCloud(x, y, rx, ry, color, alpha) {
       const maxR = Math.max(rx, ry);
       g.save();
       g.translate(x, y);
       g.scale(rx / maxR, ry / maxR);
 
       const grad = g.createRadialGradient(0, 0, 0, 0, 0, maxR);
-      grad.addColorStop(0, rgba(col, alpha));
-      grad.addColorStop(0.16, rgba(col, alpha * 0.8));
-      grad.addColorStop(0.5, rgba(col, alpha * 0.26));
-      grad.addColorStop(1, rgba(col, 0));
+      grad.addColorStop(0, rgba(color, alpha));
+      grad.addColorStop(0.18, rgba(color, alpha * 0.82));
+      grad.addColorStop(0.5, rgba(color, alpha * 0.24));
+      grad.addColorStop(1, rgba(color, 0));
 
       g.fillStyle = grad;
       g.beginPath();
@@ -229,110 +258,106 @@
       g.restore();
     }
 
-    // broad dim gas
-    for (let i = 0; i < 20; i++) {
-      const t = rnd() * 2 - 1;
-      const spread = 140 + rnd() * 180;
-      const x = centerX + Math.cos(angle) * overallLength * t + (rnd() - 0.5) * spread;
-      const y = centerY + Math.sin(angle) * overallLength * t + (rnd() - 0.5) * spread;
+    g.clearRect(0, 0, size, size);
+    g.globalCompositeOperation = "screen";
 
-      blob(
+    const angle = rnd() * TAU;
+    const centerX = 420 + rnd() * 180;
+    const centerY = 390 + rnd() * 220;
+    const length = 250 + rnd() * 250;
+    const strands = 5 + Math.floor(rnd() * 4);
+
+    for (let i = 0; i < 22; i++) {
+      const t = rnd() * 2 - 1;
+      const x = centerX + Math.cos(angle) * length * t + (rnd() - 0.5) * 180;
+      const y = centerY + Math.sin(angle) * length * t + (rnd() - 0.5) * 160;
+
+      const chosen = rnd() < 0.33 ? baseA : rnd() < 0.66 ? baseB : baseC;
+      drawCloud(
         x,
         y,
-        120 + rnd() * 180,
-        40 + rnd() * 130,
-        rnd() < 0.5 ? base1 : base2,
-        0.012 + rnd() * 0.028
+        110 + rnd() * 190,
+        38 + rnd() * 120,
+        adjustRgb(chosen, colorBoost),
+        (0.012 + rnd() * 0.026) * scene.nebulaBrightness
       );
     }
 
-    // filament structures
     for (let s = 0; s < strands; s++) {
-      const strandAngle = angle + (rnd() - 0.5) * 0.9;
-      const amplitude = 35 + rnd() * 80;
-      const thickness = 22 + rnd() * 55;
-      const color = choose([base1, base2, base3], rnd);
+      const strandAngle = angle + (rnd() - 0.5) * 1.1;
+      const amplitude = 35 + rnd() * 90;
+      const thickness = 18 + rnd() * 58;
+      const localColor = adjustRgb(choose([baseA, baseB, baseC], rnd), colorBoost);
       const phase = rnd() * TAU;
-      const length = overallLength * (0.8 + rnd() * 0.35);
 
-      for (let i = 0; i < 60; i++) {
-        const t = i / 59;
+      for (let i = 0; i < 64; i++) {
+        const t = i / 63;
         const along = (t - 0.5) * length * 2;
-        const wave = Math.sin(t * TAU * (1.4 + rnd() * 2.4) + phase) * amplitude;
+        const wave = Math.sin(t * TAU * (1.2 + rnd() * 2.5) + phase) * amplitude;
         const x = centerX + Math.cos(strandAngle) * along - Math.sin(strandAngle) * wave;
         const y = centerY + Math.sin(strandAngle) * along + Math.cos(strandAngle) * wave;
-        const taper = Math.pow(Math.sin(Math.PI * t), 0.7);
+        const taper = Math.pow(Math.sin(Math.PI * t), 0.74);
 
-        blob(
+        drawCloud(
           x + (rnd() - 0.5) * 12,
           y + (rnd() - 0.5) * 12,
-          thickness * (0.7 + rnd() * 0.6) * taper + 6,
-          thickness * (0.32 + rnd() * 0.45) * taper + 6,
-          color,
-          (0.016 + rnd() * 0.05) * taper
+          thickness * (0.68 + rnd() * 0.62) * taper + 8,
+          thickness * (0.28 + rnd() * 0.42) * taper + 7,
+          localColor,
+          (0.017 + rnd() * 0.044) * taper * scene.nebulaBrightness
         );
       }
     }
 
-    // small bright knots
-    for (let i = 0; i < 24; i++) {
-      const x = centerX + (rnd() - 0.5) * overallLength * 1.6;
-      const y = centerY + (rnd() - 0.5) * overallLength * 1.3;
-      blob(
-        x,
-        y,
-        16 + rnd() * 54,
-        12 + rnd() * 44,
-        rnd() < 0.7 ? base3 : base2,
-        0.02 + rnd() * 0.06
+    for (let i = 0; i < 28; i++) {
+      drawCloud(
+        centerX + (rnd() - 0.5) * length * 1.7,
+        centerY + (rnd() - 0.5) * length * 1.35,
+        16 + rnd() * 60,
+        12 + rnd() * 50,
+        adjustRgb(choose([baseA, baseB, baseC], rnd), colorBoost * 1.05),
+        (0.02 + rnd() * 0.05) * scene.nebulaBrightness
       );
     }
 
-    // dark cutouts to avoid "soft wallpaper" feeling
     g.globalCompositeOperation = "destination-out";
     for (let i = 0; i < 14; i++) {
-      const x = centerX + (rnd() - 0.5) * overallLength * 1.4;
-      const y = centerY + (rnd() - 0.5) * overallLength * 1.2;
-      blob(
-        x,
-        y,
-        30 + rnd() * 90,
-        22 + rnd() * 80,
+      drawCloud(
+        centerX + (rnd() - 0.5) * length * 1.25,
+        centerY + (rnd() - 0.5) * length * 1.25,
+        34 + rnd() * 90,
+        18 + rnd() * 74,
         [0, 0, 0],
-        0.04 + rnd() * 0.08
+        0.05 + rnd() * 0.06
       );
     }
 
-    cacheSet(nebulaCache, key, off, C.rendering.nebulaCacheSize);
+    cacheSet(nebulaCache, cacheKey, off, C.rendering.nebulaCacheSize);
     return off;
   }
 
   function drawNebulae(time) {
-    if (!C.motion.nebulae && reducedMotion) return;
-
-    const parallax = 0.38;
-    const scale = camera.zoom * 0.92;
-    const drift = reducedMotion ? 0 : Math.sin(time * C.nebulae.driftSpeed) * 14;
+    const parallax = 0.36;
+    const scale = camera.zoom * 0.94;
+    const drift = reducedMotion ? 0 : Math.sin(time * C.nebulae.driftSpeed) * 10;
 
     ctx.save();
     ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = C.nebulae.opacity;
+    ctx.globalAlpha = C.nebulae.opacity * Math.min(1.3, scene.nebulaBrightness);
 
     for (const cell of visibleCells(C.nebulae.cellSize, parallax, scale)) {
-      const sprite = generateNebulaSprite(cell.x, cell.y);
+      const sprite = buildNebulaSprite(cell.x, cell.y);
       if (!sprite) continue;
 
-      const rnd = rngFor(cell.x, cell.y, 5221);
+      const rnd = rngFor(cell.x, cell.y, 5151);
       const worldX = cell.x * C.nebulae.cellSize + (rnd() - 0.5) * 620;
       const worldY = cell.y * C.nebulae.cellSize + (rnd() - 0.5) * 620;
       const pos = project(worldX, worldY, parallax, scale);
-
-      const size = lerp(C.nebulae.sizeMin, C.nebulae.sizeMax, rnd()) * scale;
-      const rotation = rnd() * TAU;
+      const size = lerp(C.nebulae.sizeMin, C.nebulae.sizeMax, rnd()) * scene.nebulaSize * scale;
 
       ctx.save();
-      ctx.translate(pos.x + drift, pos.y - drift * 0.35);
-      ctx.rotate(rotation);
+      ctx.translate(pos.x + drift, pos.y - drift * 0.25);
+      ctx.rotate(rnd() * TAU);
       ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
       ctx.restore();
     }
@@ -340,18 +365,23 @@
     ctx.restore();
   }
 
-  // -------------------------------------------------
-  // Stars
-  // -------------------------------------------------
+  function variedStarColor(baseHex, variance, rnd) {
+    const rgb = hexToRgb(baseHex);
 
-  function drawStarPoint(x, y, radius, color, alpha, glowStrength) {
-    if (x < -40 || x > W + 40 || y < -40 || y > H + 40) return;
+    const drift = variance * 45;
+    return `rgb(${clamp(Math.round(rgb.r + (rnd() - 0.5) * drift), 0, 255)},
+                ${clamp(Math.round(rgb.g + (rnd() - 0.5) * drift), 0, 255)},
+                ${clamp(Math.round(rgb.b + (rnd() - 0.5) * drift), 0, 255)})`;
+  }
+
+  function drawStar(x, y, radius, color, alpha, glowStrength) {
+    if (x < -24 || x > W + 24 || y < -24 || y > H + 24) return;
 
     if (glowStrength > 0) {
       const halo = ctx.createRadialGradient(x, y, 0, x, y, radius * 10);
-      halo.addColorStop(0, `rgba(255,255,255,${alpha * 0.28})`);
-      halo.addColorStop(0.24, `rgba(150,190,255,${alpha * glowStrength})`);
-      halo.addColorStop(1, "rgba(60,100,160,0)");
+      halo.addColorStop(0, `rgba(255,255,255,${alpha * 0.22})`);
+      halo.addColorStop(0.26, `rgba(165,205,255,${alpha * glowStrength})`);
+      halo.addColorStop(1, "rgba(70,110,170,0)");
       ctx.fillStyle = halo;
       circle(x, y, radius * 10);
       ctx.fill();
@@ -362,14 +392,14 @@
     circle(x, y, Math.max(0.22, radius));
     ctx.fill();
 
-    if (radius > 1.4) {
-      ctx.strokeStyle = `rgba(220,235,255,${alpha * 0.14})`;
-      ctx.lineWidth = 0.55;
+    if (radius > 1.3) {
+      ctx.strokeStyle = `rgba(230,240,255,${alpha * 0.12})`;
+      ctx.lineWidth = 0.5;
       ctx.beginPath();
-      ctx.moveTo(x - radius * 6, y);
-      ctx.lineTo(x + radius * 6, y);
-      ctx.moveTo(x, y - radius * 6);
-      ctx.lineTo(x, y + radius * 6);
+      ctx.moveTo(x - radius * 5.6, y);
+      ctx.lineTo(x + radius * 5.6, y);
+      ctx.moveTo(x, y - radius * 5.6);
+      ctx.lineTo(x, y + radius * 5.6);
       ctx.stroke();
     }
 
@@ -377,451 +407,232 @@
   }
 
   function drawStarLayer(layer, time) {
-    const configs = [
-      { count: C.stars.distantCount, parallax: 0.18, scaleFactor: 0.6, sizeBoost: 0.7 },
-      { count: C.stars.middleCount, parallax: 0.5, scaleFactor: 0.82, sizeBoost: 1 },
-      { count: C.stars.nearCount, parallax: 1, scaleFactor: 1, sizeBoost: 1.15 }
+    const layers = [
+      { count: C.stars.distantCount, parallax: 0.18, scaleFactor: 0.58, radiusScale: 0.75 },
+      { count: C.stars.middleCount, parallax: 0.48, scaleFactor: 0.82, radiusScale: 1 },
+      { count: C.stars.nearCount, parallax: 1, scaleFactor: 1, radiusScale: 1.14 }
     ];
 
-    const conf = configs[layer];
+    const conf = layers[layer];
     const scale = camera.zoom * conf.scaleFactor;
+    const count = Math.max(1, Math.round(conf.count * scene.starsAmount));
 
     for (const cell of visibleCells(C.stars.cellSize, conf.parallax, scale)) {
       const rnd = rngFor(cell.x, cell.y, 1300 + layer);
 
-      for (let i = 0; i < conf.count; i++) {
+      for (let i = 0; i < count; i++) {
         const wx = cell.x * C.stars.cellSize + rnd() * C.stars.cellSize;
         const wy = cell.y * C.stars.cellSize + rnd() * C.stars.cellSize;
 
-        const brightnessSeed = rnd();
+        const base = rnd();
         const phase = rnd() * TAU;
-        const twinkle = reducedMotion
-          ? 1
-          : 0.85 + Math.sin(time * C.stars.twinkleSpeed * (0.8 + rnd() * 1.4) + phase) * 0.15;
+        const twinkle =
+          reducedMotion
+            ? 1
+            : 1 + Math.sin(time * C.stars.twinkleSpeed * scene.starsTwinkle * (0.75 + rnd() * 1.25) + phase) * (0.13 * scene.starsTwinkle);
 
         const pos = project(wx, wy, conf.parallax, scale);
-        const baseRadius =
+
+        const radius =
           layer === 0
-            ? 0.18 + Math.pow(brightnessSeed, 4) * 0.72
+            ? 0.18 + Math.pow(base, 4) * 0.76
             : layer === 1
-              ? 0.28 + Math.pow(brightnessSeed, 4.5) * 1.6
-              : 0.38 + Math.pow(brightnessSeed, 5.3) * 2.1;
+              ? 0.28 + Math.pow(base, 4.5) * 1.55
+              : 0.4 + Math.pow(base, 5.4) * 2.15;
 
-        const radius = clamp(baseRadius * Math.sqrt(scale) * conf.sizeBoost, 0.2, 4.4);
-        const alpha = (0.22 + Math.pow(rnd(), 0.45) * 0.76) * twinkle;
-        const glowStrength = brightnessSeed > 0.9 ? 0.12 + rnd() * 0.2 : 0;
+        const brightness = (0.17 + Math.pow(rnd(), 0.42) * 0.82) * scene.starsBrightness * twinkle;
+        const glow = base > 0.91 ? 0.08 + rnd() * 0.16 : 0;
 
-        drawStarPoint(
+        drawStar(
           pos.x,
           pos.y,
-          radius,
-          choose(C.stars.colors, rnd),
-          alpha,
-          glowStrength
+          clamp(radius * Math.sqrt(scale) * conf.radiusScale, 0.2, 4.3),
+          variedStarColor(choose(C.stars.colors, rnd), scene.starsColorVariance, rnd),
+          Math.min(1, brightness),
+          glow
         );
       }
     }
   }
 
-  // -------------------------------------------------
-  // Planet textures
-  // -------------------------------------------------
+  function drawPlanet(time) {
+    const p = C.planet;
+    const drift = reducedMotion ? 0 : Math.sin(time * 0.000045) * 2;
 
-  function makePlanetSprite(radius, palette, seed) {
-    const key = `${radius}:${palette.base}:${palette.dark}:${palette.light}:${seed}`;
-    const cached = cacheGet(planetCache, key);
-    if (cached) return cached;
+    const pos = project(p.worldX + drift, p.worldY - drift * 0.25, 0.86, camera.zoom * 0.96);
+    const r = p.radius * camera.zoom * 0.96;
 
-    const size = Math.ceil(radius * 2 + 120);
-    const off = document.createElement("canvas");
-    off.width = off.height = size;
-    const g = off.getContext("2d");
-    const rnd = mulberry32(seed);
+    if (pos.x + r < -100 || pos.x - r > W + 100 || pos.y + r < -100 || pos.y - r > H + 100) {
+      return;
+    }
 
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = radius;
+    const oceanDeep = hexToRgb(p.baseColors.deepOcean);
+    const oceanShallow = hexToRgb(p.baseColors.shallowOcean);
+    const brightShelf = hexToRgb(p.baseColors.brightShelf);
+    const land = hexToRgb(p.baseColors.land);
+    const highland = hexToRgb(p.baseColors.highland);
+    const cloud = hexToRgb(p.baseColors.clouds);
 
-    const base = hexToRgb(palette.base);
-    const dark = hexToRgb(palette.dark);
-    const light = hexToRgb(palette.light);
-    const cloud = hexToRgb(palette.cloud);
+    // Outer atmosphere halo
+    const halo = ctx.createRadialGradient(pos.x, pos.y, r * 0.78, pos.x, pos.y, r * 1.18);
+    halo.addColorStop(0, "rgba(90, 180, 230, 0.02)");
+    halo.addColorStop(0.76, p.atmosphereColor);
+    halo.addColorStop(1, "rgba(90, 180, 230, 0)");
+    ctx.fillStyle = halo;
+    circle(pos.x, pos.y, r * 1.18);
+    ctx.fill();
 
-    // halo
-    let grad = g.createRadialGradient(cx, cy, r * 0.65, cx, cy, r * 1.35);
-    grad.addColorStop(0, "rgba(90,140,200,0.02)");
-    grad.addColorStop(0.7, "rgba(90,150,220,0.08)");
-    grad.addColorStop(1, "rgba(90,150,220,0)");
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(cx, cy, r * 1.35, 0, TAU);
-    g.fill();
+    ctx.save();
+    circle(pos.x, pos.y, r);
+    ctx.clip();
 
-    g.save();
-    g.beginPath();
-    g.arc(cx, cy, r, 0, TAU);
-    g.clip();
+    // Base ocean sphere
+    let surface = ctx.createLinearGradient(pos.x - r, pos.y - r, pos.x + r * 0.7, pos.y + r);
+    surface.addColorStop(0, `rgb(${brightShelf.r},${brightShelf.g},${brightShelf.b})`);
+    surface.addColorStop(0.28, `rgb(${oceanShallow.r},${oceanShallow.g},${oceanShallow.b})`);
+    surface.addColorStop(0.66, `rgb(${oceanDeep.r},${oceanDeep.g},${oceanDeep.b})`);
+    surface.addColorStop(1, "rgb(8,22,34)");
+    ctx.fillStyle = surface;
+    ctx.fillRect(pos.x - r, pos.y - r, r * 2, r * 2);
 
-    // base sphere gradient
-    grad = g.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-    grad.addColorStop(0, `rgb(${light.r},${light.g},${light.b})`);
-    grad.addColorStop(0.5, `rgb(${base.r},${base.g},${base.b})`);
-    grad.addColorStop(1, `rgb(${dark.r},${dark.g},${dark.b})`);
-    g.fillStyle = grad;
-    g.fillRect(cx - r, cy - r, r * 2, r * 2);
+    const rnd = mulberry32(C.seed + 2027);
 
-    // surface banding / textural forms
-    for (let i = 0; i < 55; i++) {
-      const y = cy + (rnd() * 2 - 1) * r;
-      const h = Math.max(1, r * (0.01 + rnd() * 0.055));
-      const width = r * (0.8 + rnd() * 0.45);
-      const alpha = 0.02 + rnd() * 0.06;
+    // Land / texture masses
+    for (let i = 0; i < 34; i++) {
+      const px = pos.x + (rnd() * 2 - 1) * r * 0.74;
+      const py = pos.y + (rnd() * 2 - 1) * r * 0.74;
+      const rx = r * (0.05 + rnd() * 0.24);
+      const ry = rx * (0.45 + rnd() * 0.9);
+      const rot = rnd() * TAU;
 
-      g.fillStyle =
-        rnd() < 0.58
-          ? `rgba(${light.r},${light.g},${light.b},${alpha})`
-          : `rgba(${dark.r},${dark.g},${dark.b},${alpha * 1.3})`;
+      const local = rnd() < 0.72 ? land : highland;
 
-      g.beginPath();
-      g.ellipse(
-        cx + (rnd() - 0.5) * r * 0.16,
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
+      grad.addColorStop(0, `rgba(${local.r},${local.g},${local.b},${0.28 + rnd() * 0.22})`);
+      grad.addColorStop(0.6, `rgba(${local.r},${local.g},${local.b},${0.16 + rnd() * 0.12})`);
+      grad.addColorStop(1, `rgba(${local.r},${local.g},${local.b},0)`);
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rot);
+      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+      ctx.fillStyle = grad;
+      circle(0, 0, Math.max(rx, ry));
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Coastal bright shelf / water pattern
+    for (let i = 0; i < 22; i++) {
+      const px = pos.x + (rnd() * 2 - 1) * r * 0.7;
+      const py = pos.y + (rnd() * 2 - 1) * r * 0.7;
+      const rx = r * (0.05 + rnd() * 0.18);
+      const ry = rx * (0.28 + rnd() * 0.65);
+
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
+      grad.addColorStop(0, `rgba(${brightShelf.r},${brightShelf.g},${brightShelf.b},${0.12 + rnd() * 0.12})`);
+      grad.addColorStop(1, `rgba(${brightShelf.r},${brightShelf.g},${brightShelf.b},0)`);
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rnd() * TAU);
+      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+      ctx.fillStyle = grad;
+      circle(0, 0, Math.max(rx, ry));
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Fine cloud bands / wisps
+    for (let i = 0; i < 24; i++) {
+      const y = pos.y + (rnd() * 2 - 1) * r;
+      const width = r * (0.5 + rnd() * 0.55);
+      const height = Math.max(2, r * (0.012 + rnd() * 0.035));
+
+      ctx.fillStyle = `rgba(${cloud.r},${cloud.g},${cloud.b},${0.05 + rnd() * 0.08})`;
+      ctx.beginPath();
+      ctx.ellipse(
+        pos.x + (rnd() - 0.5) * r * 0.12,
         y,
         width,
-        h,
-        (rnd() - 0.5) * 0.08,
+        height,
+        (rnd() - 0.5) * 0.07,
         0,
         TAU
       );
-      g.fill();
+      ctx.fill();
     }
 
-    // crater/continent-like patches
-    for (let i = 0; i < 28; i++) {
-      const x = cx + (rnd() * 2 - 1) * r * 0.8;
-      const y = cy + (rnd() * 2 - 1) * r * 0.8;
-      const rx = r * (0.03 + rnd() * 0.12);
-      const ry = rx * (0.6 + rnd() * 0.8);
+    // brighter cloud clusters
+    for (let i = 0; i < 18; i++) {
+      const px = pos.x + (rnd() * 2 - 1) * r * 0.78;
+      const py = pos.y + (rnd() * 2 - 1) * r * 0.78;
+      const rx = r * (0.05 + rnd() * 0.12);
+      const ry = rx * (0.35 + rnd() * 0.45);
 
-      g.fillStyle =
-        rnd() < 0.45
-          ? `rgba(${dark.r},${dark.g},${dark.b},${0.08 + rnd() * 0.12})`
-          : `rgba(${light.r},${light.g},${light.b},${0.04 + rnd() * 0.08})`;
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, Math.max(rx, ry));
+      grad.addColorStop(0, `rgba(${cloud.r},${cloud.g},${cloud.b},${0.12 + rnd() * 0.18})`);
+      grad.addColorStop(1, `rgba(${cloud.r},${cloud.g},${cloud.b},0)`);
 
-      g.beginPath();
-      g.ellipse(x, y, rx, ry, rnd() * TAU, 0, TAU);
-      g.fill();
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rnd() * TAU);
+      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+      ctx.fillStyle = grad;
+      circle(0, 0, Math.max(rx, ry));
+      ctx.fill();
+      ctx.restore();
     }
 
-    // clouds
-    for (let i = 0; i < 16; i++) {
-      const x = cx + (rnd() * 2 - 1) * r * 0.68;
-      const y = cy + (rnd() * 2 - 1) * r * 0.68;
-      const rx = r * (0.08 + rnd() * 0.18);
-      const ry = rx * (0.32 + rnd() * 0.45);
-
-      const cg = g.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-      cg.addColorStop(0, `rgba(${cloud.r},${cloud.g},${cloud.b},${0.1 + rnd() * 0.08})`);
-      cg.addColorStop(1, `rgba(${cloud.r},${cloud.g},${cloud.b},0)`);
-      g.fillStyle = cg;
-
-      g.save();
-      g.translate(x, y);
-      g.rotate(rnd() * TAU);
-      g.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-      g.beginPath();
-      g.arc(0, 0, Math.max(rx, ry), 0, TAU);
-      g.fill();
-      g.restore();
-    }
-
-    // day/night spherical shading
-    grad = g.createRadialGradient(
-      cx - r * 0.42,
-      cy - r * 0.45,
-      r * 0.08,
-      cx + r * 0.12,
-      cy + r * 0.08,
-      r * 1.32
+    // Directional lighting / half shadow
+    const light = ctx.createRadialGradient(
+      pos.x - r * 0.58,
+      pos.y - r * 0.42,
+      r * 0.06,
+      pos.x + r * 0.1,
+      pos.y + r * 0.06,
+      r * 1.35
     );
-    grad.addColorStop(0, "rgba(255,255,255,0.12)");
-    grad.addColorStop(0.33, "rgba(255,255,255,0.03)");
-    grad.addColorStop(0.62, "rgba(0,0,0,0.1)");
-    grad.addColorStop(0.78, "rgba(0,0,0,0.42)");
-    grad.addColorStop(1, "rgba(0,0,0,0.95)");
-    g.fillStyle = grad;
-    g.fillRect(cx - r, cy - r, r * 2, r * 2);
+    light.addColorStop(0, "rgba(255,255,255,0.28)");
+    light.addColorStop(0.18, "rgba(255,255,255,0.12)");
+    light.addColorStop(0.42, "rgba(255,255,255,0.02)");
+    light.addColorStop(0.62, "rgba(0,0,0,0.08)");
+    light.addColorStop(0.8, "rgba(0,0,0,0.48)");
+    light.addColorStop(1, "rgba(0,0,0,0.96)");
+    ctx.fillStyle = light;
+    ctx.fillRect(pos.x - r, pos.y - r, r * 2, r * 2);
 
-    g.restore();
-
-    // terminator rim
-    g.strokeStyle = "rgba(170,210,255,0.18)";
-    g.lineWidth = Math.max(1, r * 0.01);
-    g.beginPath();
-    g.arc(cx, cy, r, 0, TAU);
-    g.stroke();
-
-    const sprite = { canvas: off, size };
-    cacheSet(planetCache, key, sprite, C.rendering.planetCacheSize);
-    return sprite;
-  }
-
-  function drawPlanet(worldX, worldY, radius, palette, seed, time) {
-    const driftAmount = reducedMotion || !C.motion.planets
-      ? 0
-      : Math.sin(time * 0.00012 + seed) * C.planets.driftAmplitude;
-
-    const pos = project(worldX + driftAmount, worldY - driftAmount * 0.4);
-    const scaledRadius = radius * camera.zoom;
-
-    if (
-      scaledRadius < 4 ||
-      pos.x + scaledRadius < -80 ||
-      pos.x - scaledRadius > W + 80 ||
-      pos.y + scaledRadius < -80 ||
-      pos.y - scaledRadius > H + 80
-    ) {
-      return;
-    }
-
-    const sprite = makePlanetSprite(radius, palette, seed);
-    const size = sprite.size * camera.zoom;
-
-    ctx.drawImage(
-      sprite.canvas,
-      pos.x - size / 2,
-      pos.y - size / 2,
-      size,
-      size
-    );
-  }
-
-  function drawPlanets(time) {
-    // Main hero planet
-    drawPlanet(560, -140, 200, C.planets.palettes[0], 9011, time);
-
-    // Secondary moon-like body
-    drawPlanet(-980, -690, 120, C.planets.palettes[1], 22981, time);
-
-    for (const cell of visibleCells(C.planets.cellSize)) {
-      const rnd = rngFor(cell.x, cell.y, 7007);
-      if (rnd() > C.planets.probability) continue;
-
-      const x = cell.x * C.planets.cellSize + rnd() * C.planets.cellSize;
-      const y = cell.y * C.planets.cellSize + rnd() * C.planets.cellSize;
-
-      if (Math.hypot(x - 560, y + 140) < 900) continue;
-      if (Math.hypot(x + 980, y + 690) < 700) continue;
-
-      const radius = lerp(C.planets.minRadius, C.planets.maxRadius, rnd());
-      const palette = choose(C.planets.palettes, rnd);
-      const seed = Math.floor(rnd() * 999999);
-
-      drawPlanet(x, y, radius, palette, seed, time);
-    }
-  }
-
-  // -------------------------------------------------
-  // Asteroid sprites / drawing
-  // -------------------------------------------------
-
-  function makeAsteroidSprite(radius, seed) {
-    const key = `${radius}:${seed}`;
-    const cached = cacheGet(asteroidCache, key);
-    if (cached) return cached;
-
-    const rnd = mulberry32(seed);
-    const pad = Math.ceil(radius * 1.1 + 12);
-    const size = pad * 2;
-    const off = document.createElement("canvas");
-    off.width = off.height = size;
-    const g = off.getContext("2d");
-
-    const cx = size / 2;
-    const cy = size / 2;
-
-    const points = [];
-    const count = 10 + Math.floor(rnd() * 5);
-
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * TAU;
-      const dist = radius * (0.68 + rnd() * 0.42);
-      points.push({
-        x: cx + Math.cos(angle) * dist,
-        y: cy + Math.sin(angle) * dist
-      });
-    }
-
-    g.beginPath();
-    g.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      g.lineTo(points[i].x, points[i].y);
-    }
-    g.closePath();
-    g.clip();
-
-    let grad = g.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
-    grad.addColorStop(0, "#b5b6b2");
-    grad.addColorStop(0.32, "#7d817d");
-    grad.addColorStop(0.7, "#3d4246");
-    grad.addColorStop(1, "#12171f");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-
-    // crater forms
-    for (let i = 0; i < 22; i++) {
-      const x = cx + (rnd() * 2 - 1) * radius * 0.7;
-      const y = cy + (rnd() * 2 - 1) * radius * 0.7;
-      const r = radius * (0.05 + rnd() * 0.18);
-
-      const dark = g.createRadialGradient(x, y, 0, x, y, r);
-      dark.addColorStop(0, `rgba(0,0,0,${0.18 + rnd() * 0.2})`);
-      dark.addColorStop(1, "rgba(0,0,0,0)");
-      g.fillStyle = dark;
-      g.beginPath();
-      g.arc(x, y, r, 0, TAU);
-      g.fill();
-
-      g.strokeStyle = `rgba(210,215,215,${0.05 + rnd() * 0.07})`;
-      g.lineWidth = 0.8;
-      g.beginPath();
-      g.arc(x - r * 0.1, y - r * 0.1, r * 0.8, 0, TAU);
-      g.stroke();
-    }
-
-    // faceting
-    for (let i = 0; i < 7; i++) {
-      g.beginPath();
-      const a = points[Math.floor(rnd() * points.length)];
-      const b = points[Math.floor(rnd() * points.length)];
-      const mx = cx + (rnd() * 2 - 1) * radius * 0.35;
-      const my = cy + (rnd() * 2 - 1) * radius * 0.35;
-      g.moveTo(a.x, a.y);
-      g.lineTo(b.x, b.y);
-      g.lineTo(mx, my);
-      g.closePath();
-      g.fillStyle = rnd() < 0.5 ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.07)";
-      g.fill();
-    }
-
-    // overall shading
-    grad = g.createRadialGradient(
-      cx - radius * 0.45,
-      cy - radius * 0.45,
-      radius * 0.12,
-      cx + radius * 0.1,
-      cy + radius * 0.1,
-      radius * 1.3
-    );
-    grad.addColorStop(0, "rgba(255,255,255,0.18)");
-    grad.addColorStop(0.34, "rgba(255,255,255,0.02)");
-    grad.addColorStop(0.72, "rgba(0,0,0,0.18)");
-    grad.addColorStop(1, "rgba(0,0,0,0.82)");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-
-    // edge restore
-    g.beginPath();
-    g.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      g.lineTo(points[i].x, points[i].y);
-    }
-    g.closePath();
-    g.strokeStyle = "rgba(180,190,200,0.12)";
-    g.lineWidth = 1;
-    g.stroke();
-
-    const sprite = { canvas: off, size };
-    cacheSet(asteroidCache, key, sprite, C.rendering.asteroidCacheSize);
-    return sprite;
-  }
-
-  function drawAsteroid(worldX, worldY, radius, seed, time) {
-    const drift = reducedMotion || !C.motion.asteroids
-      ? 0
-      : Math.sin(time * C.asteroids.driftSpeed + seed * 0.0001) * 8;
-
-    const pos = project(worldX + drift, worldY + drift * 0.4);
-    const scaledRadius = radius * camera.zoom;
-
-    if (
-      scaledRadius < 0.8 ||
-      pos.x + scaledRadius < -100 ||
-      pos.x - scaledRadius > W + 100 ||
-      pos.y + scaledRadius < -100 ||
-      pos.y - scaledRadius > H + 100
-    ) {
-      return;
-    }
-
-    const sprite = makeAsteroidSprite(radius, seed);
-    const size = sprite.size * camera.zoom;
-
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    ctx.rotate(Math.sin(time * 0.00005 + seed) * 0.12);
-    ctx.drawImage(sprite.canvas, -size / 2, -size / 2, size, size);
     ctx.restore();
+
+    // Atmosphere rim
+    ctx.strokeStyle = "rgba(175, 230, 255, 0.22)";
+    ctx.lineWidth = Math.max(1, r * 0.008);
+    circle(pos.x, pos.y, r);
+    ctx.stroke();
   }
 
-  function drawAsteroids(time) {
-    // More restrained "hero" asteroid field around main planet
-    const clusterRng = rngFor(4, 8, 9090);
+  function scheduleShootingStar(time) {
+    const frequency = scene.shootingFrequency;
+    const minDelay = lerp(9000, 24000, 1 - Math.min(1, frequency / 2));
+    const maxDelay = lerp(15000, 32000, 1 - Math.min(1, frequency / 2));
 
-    for (let i = 0; i < 26; i++) {
-      const angle = clusterRng() * TAU;
-      const distance = 250 + Math.pow(clusterRng(), 0.7) * 540;
-      const worldX = 560 + Math.cos(angle) * distance;
-      const worldY = -140 + Math.sin(angle) * distance * 0.78;
-      const radius = 4 + Math.pow(clusterRng(), 3.2) * 42;
-      const seed = Math.floor(clusterRng() * 999999);
+    nextShootingStar = time + lerp(minDelay, maxDelay, Math.random());
+  }
 
-      drawAsteroid(worldX, worldY, radius, seed, time);
+  function drawShootingStars(time) {
+    if (!C.shootingStars.enabled) return;
+
+    if (!nextShootingStar) {
+      scheduleShootingStar(time);
     }
 
-    for (const cell of visibleCells(C.asteroids.cellSize)) {
-      const rnd = rngFor(cell.x, cell.y, 4411);
-      if (rnd() > C.asteroids.density) continue;
-
-      const count = 1 + Math.floor(rnd() * C.asteroids.maxPerCell);
-
-      for (let i = 0; i < count; i++) {
-        const x = cell.x * C.asteroids.cellSize + rnd() * C.asteroids.cellSize;
-        const y = cell.y * C.asteroids.cellSize + rnd() * C.asteroids.cellSize;
-        const radius = lerp(
-          C.asteroids.minRadius,
-          C.asteroids.maxRadius,
-          Math.pow(rnd(), 2.1)
-        );
-        const seed = Math.floor(rnd() * 999999);
-        drawAsteroid(x, y, radius, seed, time);
-      }
-    }
-  }
-
-  // -------------------------------------------------
-  // Shooting stars
-  // -------------------------------------------------
-
-  function scheduleShootingStar(now) {
-    nextShootingStar = now + lerp(
-      C.shootingStars.minDelay,
-      C.shootingStars.maxDelay,
-      Math.random()
-    );
-  }
-
-  function drawShootingStars(now) {
-    if (reducedMotion || !C.motion.shootingStars || !C.shootingStars.enabled) return;
-
-    if (!nextShootingStar) scheduleShootingStar(now);
-
-    if (!shootingStar && now > nextShootingStar) {
+    if (!shootingStar && time > nextShootingStar) {
       shootingStar = {
-        born: now,
+        born: time,
         x: Math.random() * W,
-        y: Math.random() * H * 0.6,
-        angle: Math.PI * (0.1 + Math.random() * 0.25),
-        distance: 180 + Math.random() * 280,
+        y: Math.random() * H * 0.52,
+        angle: Math.PI * (0.12 + Math.random() * 0.18),
+        distance: 120 + Math.random() * 220,
         duration: C.shootingStars.duration
       };
     }
@@ -829,45 +640,49 @@
     if (!shootingStar) return;
 
     const s = shootingStar;
-    const t = (now - s.born) / s.duration;
+    const t = (time - s.born) / s.duration;
+
     if (t >= 1) {
       shootingStar = null;
-      scheduleShootingStar(now);
+      scheduleShootingStar(time);
       return;
     }
 
-    const p = smoothstep(t);
-    const alpha = Math.sin(t * Math.PI) * 0.8;
+    const progress = smoothstep(t);
+    const opacity = Math.sin(t * Math.PI) * 0.35;
 
-    const hx = s.x + Math.cos(s.angle) * s.distance * p;
-    const hy = s.y + Math.sin(s.angle) * s.distance * p;
-    const tailLen = 90 + 100 * (1 - t);
-    const tx = hx - Math.cos(s.angle) * tailLen;
-    const ty = hy - Math.sin(s.angle) * tailLen;
+    const hx = s.x + Math.cos(s.angle) * s.distance * progress;
+    const hy = s.y + Math.sin(s.angle) * s.distance * progress;
+
+    const tailLength = 55 + 75 * (1 - t);
+    const tx = hx - Math.cos(s.angle) * tailLength;
+    const ty = hy - Math.sin(s.angle) * tailLength;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
 
     const grad = ctx.createLinearGradient(tx, ty, hx, hy);
-    grad.addColorStop(0, "rgba(70,120,255,0)");
-    grad.addColorStop(0.74, `rgba(150,200,255,${alpha * 0.35})`);
-    grad.addColorStop(1, `rgba(255,255,255,${alpha})`);
+    grad.addColorStop(0, "rgba(70,110,180,0)");
+    grad.addColorStop(0.7, `rgba(135,180,255,${opacity * 0.28})`);
+    grad.addColorStop(1, `rgba(245,250,255,${opacity})`);
 
     ctx.strokeStyle = grad;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
     ctx.moveTo(tx, ty);
     ctx.lineTo(hx, hy);
     ctx.stroke();
 
-    const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 14);
-    glow.addColorStop(0, `rgba(255,255,255,${alpha * 0.65})`);
-    glow.addColorStop(1, "rgba(120,180,255,0)");
-    ctx.fillStyle = glow;
-    circle(hx, hy, 14);
-    ctx.fill();
-  }
+    const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 8);
+    glow.addColorStop(0, `rgba(255,255,255,${opacity * 0.45})`);
+    glow.addColorStop(1, "rgba(130,180,255,0)");
 
-  // -------------------------------------------------
-  // Ambient audio
-  // -------------------------------------------------
+    ctx.fillStyle = glow;
+    circle(hx, hy, 8);
+    ctx.fill();
+
+    ctx.restore();
+  }
 
   function startAmbientAudio() {
     if (!C.ambientAudio.enabled || audioStarted) return;
@@ -878,90 +693,84 @@
       if (!AC) return;
 
       audioCtx = new AC();
+
       masterGain = audioCtx.createGain();
-      masterGain.gain.value = C.ambientAudio.volume;
+      masterGain.gain.value = scene.ambientVolume;
       masterGain.connect(audioCtx.destination);
 
-      const lowNoiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
-      const data = lowNoiseBuffer.getChannelData(0);
+      noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.9;
+
+      humGain = audioCtx.createGain();
+      humGain.gain.value = 0.08;
+
+      // White noise buffer
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
 
       for (let i = 0; i < data.length; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.28;
+        data[i] = Math.random() * 2 - 1;
       }
 
-      const noise = audioCtx.createBufferSource();
-      noise.buffer = lowNoiseBuffer;
-      noise.loop = true;
+      const whiteNoise = audioCtx.createBufferSource();
+      whiteNoise.buffer = buffer;
+      whiteNoise.loop = true;
 
-      const noiseFilter = audioCtx.createBiquadFilter();
-      noiseFilter.type = "lowpass";
-      noiseFilter.frequency.value = 340;
-      noiseFilter.Q.value = 0.3;
+      const lowpass = audioCtx.createBiquadFilter();
+      lowpass.type = "lowpass";
+      lowpass.frequency.value = 1600;
+      lowpass.Q.value = 0.7;
 
-      const noiseHighpass = audioCtx.createBiquadFilter();
-      noiseHighpass.type = "highpass";
-      noiseHighpass.frequency.value = 28;
+      const highpass = audioCtx.createBiquadFilter();
+      highpass.type = "highpass";
+      highpass.frequency.value = 60;
+      highpass.Q.value = 0.4;
 
-      const noiseGain = audioCtx.createGain();
-      noiseGain.gain.value = 0.65;
-
-      const osc1 = audioCtx.createOscillator();
-      osc1.type = "sine";
-      osc1.frequency.value = 52;
+      const osc = audioCtx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = 52;
 
       const osc2 = audioCtx.createOscillator();
       osc2.type = "sine";
       osc2.frequency.value = 81;
 
-      const osc1Gain = audioCtx.createGain();
-      osc1Gain.gain.value = 0.05;
+      const lfo = audioCtx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = 0.05;
 
-      const osc2Gain = audioCtx.createGain();
-      osc2Gain.gain.value = 0.03;
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 12;
 
-      const lfo1 = audioCtx.createOscillator();
-      lfo1.type = "sine";
-      lfo1.frequency.value = 0.03;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
 
-      const lfo1Gain = audioCtx.createGain();
-      lfo1Gain.gain.value = 18;
-
-      const lfo2 = audioCtx.createOscillator();
-      lfo2.type = "sine";
-      lfo2.frequency.value = 0.021;
-
-      const lfo2Gain = audioCtx.createGain();
-      lfo2Gain.gain.value = 10;
-
-      lfo1.connect(lfo1Gain);
-      lfo1Gain.connect(osc1.frequency);
-
-      lfo2.connect(lfo2Gain);
-      lfo2Gain.connect(osc2.frequency);
-
-      noise.connect(noiseFilter);
-      noiseFilter.connect(noiseHighpass);
-      noiseHighpass.connect(noiseGain);
+      whiteNoise.connect(lowpass);
+      lowpass.connect(highpass);
+      highpass.connect(noiseGain);
       noiseGain.connect(masterGain);
 
-      osc1.connect(osc1Gain);
-      osc2.connect(osc2Gain);
-      osc1Gain.connect(masterGain);
-      osc2Gain.connect(masterGain);
+      osc.connect(humGain);
+      osc2.connect(humGain);
+      humGain.connect(masterGain);
 
-      noise.start();
-      osc1.start();
+      whiteNoise.start();
+      osc.start();
       osc2.start();
-      lfo1.start();
-      lfo2.start();
+      lfo.start();
+
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
     } catch (err) {
-      console.warn("Ambient audio could not start:", err);
+      console.warn("Ambient audio failed:", err);
     }
   }
 
-  // -------------------------------------------------
-  // Pointer controls
-  // -------------------------------------------------
+  function updateAmbientVolume() {
+    if (masterGain) {
+      masterGain.gain.value = scene.ambientVolume;
+    }
+  }
 
   function getPointerPosition(event) {
     const rect = canvas.getBoundingClientRect();
@@ -985,17 +794,69 @@
     };
   }
 
-  function maybeStartAudioFromGesture() {
+  function maybeStartAudio() {
     if (C.ambientAudio.startOnFirstGesture) {
       startAmbientAudio();
     }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+
+  function resetToStart() {
+    camera.x = startPoint.x;
+    camera.y = startPoint.y;
+    camera.zoom = startPoint.zoom;
+  }
+
+  function bindSettings() {
+    for (const [key, input] of Object.entries(controls)) {
+      input.value = scene[key];
+      outputs[key].textContent = Number(scene[key]).toFixed(key === "ambientVolume" ? 3 : 2);
+
+      input.addEventListener("input", () => {
+        scene[key] = Number(input.value);
+        outputs[key].textContent = Number(scene[key]).toFixed(key === "ambientVolume" ? 3 : 2);
+
+        if (key === "ambientVolume") {
+          maybeStartAudio();
+          updateAmbientVolume();
+        }
+
+        if (
+          key === "nebulaColorVariance" ||
+          key === "nebulaBrightness" ||
+          key === "nebulaFrequency"
+        ) {
+          nebulaCache.clear();
+        }
+
+        if (key === "shootingFrequency") {
+          nextShootingStar = 0;
+        }
+      });
+    }
+
+    settingsBtn.addEventListener("click", () => {
+      settingsPanel.classList.remove("hidden");
+      maybeStartAudio();
+    });
+
+    closeSettingsBtn.addEventListener("click", () => {
+      settingsPanel.classList.add("hidden");
+    });
+
+    homeBtn.addEventListener("click", () => {
+      resetToStart();
+      maybeStartAudio();
+    });
   }
 
   canvas.addEventListener("pointerdown", event => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
     event.preventDefault();
-    maybeStartAudioFromGesture();
+    maybeStartAudio();
 
     const pos = getPointerPosition(event);
     pointers.set(event.pointerId, pos);
@@ -1030,12 +891,11 @@
       const before = pinchState || currentPinchMetrics();
 
       pointers.set(event.pointerId, curr);
-
       const after = currentPinchMetrics();
       if (!before || !after) return;
 
-      const anchorWorldX = camera.x + (before.x - W / 2) / camera.zoom;
-      const anchorWorldY = camera.y + (before.y - H / 2) / camera.zoom;
+      const worldX = camera.x + (before.x - W / 2) / camera.zoom;
+      const worldY = camera.y + (before.y - H / 2) / camera.zoom;
 
       const newZoom = clamp(
         camera.zoom * (after.distance / before.distance),
@@ -1044,8 +904,8 @@
       );
 
       camera.zoom = newZoom;
-      camera.x = anchorWorldX - (after.x - W / 2) / newZoom;
-      camera.y = anchorWorldY - (after.y - H / 2) / newZoom;
+      camera.x = worldX - (after.x - W / 2) / newZoom;
+      camera.y = worldY - (after.y - H / 2) / newZoom;
 
       pinchState = after;
       return;
@@ -1070,12 +930,13 @@
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
 
-  // wheel / trackpad only pan, never zoom
+  // Wheel / trackpad = pan only, never zoom
   canvas.addEventListener("wheel", event => {
     event.preventDefault();
+
     if (event.ctrlKey || event.metaKey) return;
 
-    maybeStartAudioFromGesture();
+    maybeStartAudio();
 
     const multiplier =
       event.deltaMode === 1 ? 16 :
@@ -1085,24 +946,20 @@
     camera.y += (event.deltaY * multiplier) / camera.zoom;
   }, { passive: false });
 
-  // -------------------------------------------------
-  // Render
-  // -------------------------------------------------
+  function render(time) {
+    const frameInterval = 1000 / C.rendering.targetFPS;
 
-  function render(now) {
-    const targetFrame = 1000 / C.rendering.targetFPS;
-
-    if (now - lastFrameTime < targetFrame) {
+    if (time - lastFrame < frameInterval) {
       requestAnimationFrame(render);
       return;
     }
 
-    const delta = lastAnimationTime ? Math.min(60, now - lastAnimationTime) : 16;
-    lastAnimationTime = now;
-    lastFrameTime = now;
+    const delta = previousTime ? Math.min(60, time - previousTime) : 16;
+    previousTime = time;
+    lastFrame = time;
 
     if (!reducedMotion) {
-      universeTime += delta;
+      sceneTime += delta;
     }
 
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1111,34 +968,30 @@
     ctx.clearRect(0, 0, W, H);
 
     drawBackground();
-    drawStarLayer(0, universeTime);
-    drawNebulae(universeTime);
-    drawStarLayer(1, universeTime);
-    drawPlanets(universeTime);
-    drawStarLayer(2, universeTime);
-    drawAsteroids(universeTime);
-    drawShootingStars(now);
+    drawStarLayer(0, sceneTime);
+    drawNebulae(sceneTime);
+    drawStarLayer(1, sceneTime);
+    drawPlanet(sceneTime);
+    drawStarLayer(2, sceneTime);
+    drawShootingStars(time);
 
     requestAnimationFrame(render);
   }
 
   window.addEventListener("resize", resize);
   document.addEventListener("visibilitychange", () => {
-    lastAnimationTime = 0;
+    previousTime = 0;
   });
 
   resize();
+  bindSettings();
+  resetToStart();
   requestAnimationFrame(render);
 
   window.SpaceUniverse = {
     camera,
-    moveTo(x, y) {
-      camera.x = x;
-      camera.y = y;
-    },
-    setZoom(value) {
-      camera.zoom = clamp(value, C.camera.minZoom, C.camera.maxZoom);
-    },
+    scene,
+    resetToStart,
     startAmbientAudio
   };
 })();
