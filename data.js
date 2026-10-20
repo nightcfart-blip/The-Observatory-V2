@@ -14,7 +14,7 @@ window.SPACE_CONFIG = {
   startPoint: {
     x: 0,
     y: 0,
-    zoom: 0.78
+    zoom: 0.7
   },
 
   rendering: {
@@ -51,7 +51,6 @@ window.SPACE_CONFIG = {
     middleCount: 38,
     nearCount: 13,
     twinkleSpeed: 0.00032,
-    baseAlpha: 0.85,
     colors: [
       "#ffffff",
       "#f3f7ff",
@@ -89,45 +88,6 @@ window.SPACE_CONFIG = {
     minDelay: 12000,
     maxDelay: 26000,
     duration: 1450
-  },
-
-  moon: {
-    imagePath: "IMG_8758.jpeg",
-
-    // much closer to actual scene center / x0 y0
-    worldX: 110,
-    worldY: -120,
-
-    // about 1/8 bigger than before
-    width: 1035,
-    height: 1035,
-
-    // farther in the background
-    parallax: 0.12,
-    scaleFactor: 0.66,
-
-    // keep the body fully solid
-    opacity: 1,
-    driftAmplitude: 0.75,
-
-    // preserve the dark half of the moon better
-    // and reduce the accidental "see-through" feeling
-    blackKey: {
-      clipBelow: 1,
-      featherTo: 7
-    },
-
-    // darker lit area, more shadow overall,
-    // but less of the unnatural circular dark halo
-    shadowStrength: 0.34,
-    glowOpacity: 0.003,
-
-    // very subtle haze only
-    fog: {
-      opacity: 0.012,
-      size: 1.04,
-      tint: [66, 106, 178]
-    }
   },
 
   ambientAudio: {
