@@ -1725,6 +1725,77 @@
         });
       }
 
+      // ------------------------------------------
+      // ORGANIC PARENT-CHILD CONNECTIONS
+      // ------------------------------------------
+
+      let parentItem = null;
+
+      if (type === "production" && item.groupId) {
+        parentItem = STORE.get("group", item.groupId);
+      }
+
+      if (type === "season" && item.productionId) {
+        parentItem = STORE.get(
+          "production",
+          item.productionId
+        );
+      }
+
+      if (
+        parentItem?.constellation?.center &&
+        visibility > 0
+      ) {
+        const parentCenter =
+          parentItem.constellation.center;
+
+        const childCenter =
+          constellation.center;
+
+        const start = project(
+          parentCenter.x,
+          parentCenter.y,
+          1,
+          camera.zoom
+        );
+
+        const end = project(
+          childCenter.x,
+          childCenter.y,
+          1,
+          camera.zoom
+        );
+
+        const connection = svgArchiveLine(
+          start,
+          end,
+          type === "season" ? "season" : "group"
+        );
+
+        connection.style.opacity =
+          (visibility * 0.85).toFixed(3);
+
+        lineFragment.appendChild(connection);
+
+        // A subtle traveling pulse appears along
+        // the connection occasionally.
+        if (type === "production") {
+          const pulse = svgArchiveLine(
+            start,
+            end,
+            "group",
+            true,
+            U.hashString(item.id) % 23
+          );
+
+          pulse.style.opacity =
+            (visibility * 0.7).toFixed(3);
+
+          lineFragment.appendChild(pulse);
+        }
+      }
+
+
       constellation.stars.forEach((star, index) => {
         const key = `${type}:${item.id}:${index}`;
 
@@ -3129,20 +3200,7 @@
 
           form.appendChild(notes.wrapper);
         }
-
-        let constellation = null;
-
-        if (type !== "episode") {
-          constellation =
-            createConstellationControls(
-              type === "season" ? 2 : 7
-            );
-
-          form.appendChild(
-            constellation.section
-          );
-        }
-
+      
         const action = makeButton(
           `Create ${title}`,
           null,
@@ -3155,13 +3213,10 @@
         form.addEventListener("submit", event => {
           event.preventDefault();
 
-          const input = {
-            title: name.input.value,
-            starCount: constellation
-              ? Number(constellation.slider.value)
-              : undefined
+                  const input = {
+            title: name.input.value
           };
-
+          
           if (parent) {
             if (type === "production") {
               input.groupId =
