@@ -91,19 +91,24 @@ window.SPACE_CONFIG = {
     duration: 1450
   },
 
-  planet: {
-    worldX: 860,
-    worldY: -120,
-    radius: 280,
-    atmosphereColor: "rgba(116, 205, 255, 0.18)",
-    baseColors: {
-      deepOcean: "#11496a",
-      shallowOcean: "#18aab7",
-      brightShelf: "#7fe9d5",
-      land: "#6ec36b",
-      highland: "#6e6b8e",
-      clouds: "#ffffff"
-    }
+  moon: {
+    imagePath: "IMG_8758.jpeg",
+
+    // positioned farther "behind" the scene through low parallax
+    worldX: 1420,
+    worldY: -320,
+
+    // about three times the prior scale, looming and partly off-screen
+    width: 1680,
+    height: 1680,
+
+    parallax: 0.34,
+    scaleFactor: 0.94,
+
+    // subtle atmospheric blending and soft presence
+    opacity: 0.95,
+    glowOpacity: 0.04,
+    driftAmplitude: 1.8
   },
 
   ambientAudio: {
