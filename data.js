@@ -94,36 +94,38 @@ window.SPACE_CONFIG = {
   moon: {
     imagePath: "IMG_8758.jpeg",
 
-    // more centered, but still slightly elevated
-    worldX: 1280,
-    worldY: -380,
+    // much closer to actual scene center / x0 y0
+    worldX: 110,
+    worldY: -120,
 
-    // keep it present, but farther back and grander
-    width: 920,
-    height: 920,
+    // about 1/8 bigger than before
+    width: 1035,
+    height: 1035,
 
-    // farther in background
-    parallax: 0.18,
-    scaleFactor: 0.74,
+    // farther in the background
+    parallax: 0.12,
+    scaleFactor: 0.66,
 
-    // fully solid moon
+    // keep the body fully solid
     opacity: 1,
-    driftAmplitude: 0.9,
+    driftAmplitude: 0.75,
 
-    // keep black background removed, but preserve solid moon body
+    // preserve the dark half of the moon better
+    // and reduce the accidental "see-through" feeling
     blackKey: {
-      clipBelow: 8,
-      featherTo: 20
+      clipBelow: 1,
+      featherTo: 7
     },
 
-    // more shadow, less glow
-    shadowStrength: 0.6,
-    glowOpacity: 0.012,
+    // darker lit area, more shadow overall,
+    // but less of the unnatural circular dark halo
+    shadowStrength: 0.34,
+    glowOpacity: 0.003,
 
-    // much more subtle fog
+    // very subtle haze only
     fog: {
-      opacity: 0.055,
-      size: 1.12,
+      opacity: 0.012,
+      size: 1.04,
       tint: [66, 106, 178]
     }
   },
