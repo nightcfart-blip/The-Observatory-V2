@@ -7,8 +7,8 @@ window.SPACE_CONFIG = {
     x: 0,
     y: 0,
     zoom: 1,
-    minZoom: 0.45,
-    maxZoom: 2.5
+    minZoom: 0.35,
+    maxZoom: 2.0
   },
 
   startPoint: {
@@ -94,21 +94,36 @@ window.SPACE_CONFIG = {
   moon: {
     imagePath: "IMG_8758.jpeg",
 
-    // positioned farther "behind" the scene through low parallax
-    worldX: 1420,
-    worldY: -320,
+    // farther back and more off to the side
+    worldX: 1800,
+    worldY: -470,
 
-    // about three times the prior scale, looming and partly off-screen
-    width: 1680,
-    height: 1680,
+    // roughly half the previous size
+    width: 860,
+    height: 860,
 
-    parallax: 0.34,
-    scaleFactor: 0.94,
+    // lower parallax = farther in background
+    parallax: 0.22,
+    scaleFactor: 0.82,
 
-    // subtle atmospheric blending and soft presence
-    opacity: 0.95,
-    glowOpacity: 0.04,
-    driftAmplitude: 1.8
+    opacity: 0.78,
+    driftAmplitude: 0.9,
+
+    // removes the harsh black-square feel
+    blackKey: {
+      clipBelow: 10,
+      featherTo: 42
+    },
+
+    // extra shadow and atmospheric blend
+    shadowStrength: 0.42,
+    glowOpacity: 0.035,
+
+    fog: {
+      opacity: 0.22,
+      size: 1.34,
+      tint: [66, 106, 178]
+    }
   },
 
   ambientAudio: {
