@@ -1,108 +1,113 @@
 "use strict";
 
 window.SPACE_CONFIG = {
-  seed: 962417,
+  seed: 1062417,
 
   camera: {
     x: 0,
     y: 0,
     zoom: 1,
-    minZoom: 0.42,
-    maxZoom: 2.4
+    minZoom: 0.45,
+    maxZoom: 2.5
+  },
+
+  startPoint: {
+    x: 0,
+    y: 0,
+    zoom: 1
   },
 
   rendering: {
-    maxPixelRatio: 1.75,
+    maxPixelRatio: 1.8,
     targetFPS: 40,
-    nebulaCacheSize: 24,
-    planetCacheSize: 12,
-    asteroidCacheSize: 32
-  },
-
-  motion: {
-    stars: true,
-    nebulae: true,
-    planets: true,
-    asteroids: true,
-    shootingStars: true
+    nebulaCacheSize: 36
   },
 
   sky: {
-    backgroundTop: "#00050c",
-    backgroundBottom: "#000208",
-    vignetteStrength: 0.42
+    backgroundTop: "#01050d",
+    backgroundBottom: "#020713",
+    vignetteStrength: 0.28
   },
 
-  nebulae: {
-    cellSize: 1800,
-    density: 0.48,
-    opacity: 0.8,
-    driftSpeed: 0.00018,
-    sizeMin: 900,
-    sizeMax: 1700,
+  baseScene: {
+    starsAmount: 1,
+    starsBrightness: 1,
+    starsColorVariance: 1,
+    starsTwinkle: 1,
 
-    palette: [
-      [36, 80, 170],
-      [63, 101, 204],
-      [58, 140, 216],
-      [88, 110, 224],
-      [68, 64, 166],
-      [40, 165, 210]
-    ]
+    shootingFrequency: 1,
+
+    nebulaColorVariance: 1,
+    nebulaBrightness: 1,
+    nebulaSize: 1,
+    nebulaFrequency: 1.15,
+
+    ambientVolume: 0.045
   },
 
   stars: {
     cellSize: 560,
-    distantCount: 70,
-    middleCount: 36,
+    distantCount: 72,
+    middleCount: 38,
     nearCount: 13,
-    twinkleSpeed: 0.00038,
-
+    twinkleSpeed: 0.00032,
+    baseAlpha: 0.85,
     colors: [
       "#ffffff",
-      "#edf4ff",
-      "#d9e7ff",
-      "#b6d0ff",
-      "#a5bcff",
-      "#bfe8ff",
-      "#ffe7cb"
+      "#f3f7ff",
+      "#dbe8ff",
+      "#bfd7ff",
+      "#9bbcff",
+      "#baf1ff",
+      "#ffdca8",
+      "#ffd2de",
+      "#d9c6ff"
     ]
   },
 
-  planets: {
-    cellSize: 2800,
-    probability: 0.13,
-    minRadius: 90,
-    maxRadius: 230,
-    driftAmplitude: 5,
-
-    palettes: [
-      { base: "#1e4e73", dark: "#081522", light: "#73b7d4", cloud: "#86d6eb" },
-      { base: "#58636f", dark: "#0f141b", light: "#d6dbe0", cloud: "#f2f5f7" },
-      { base: "#4b5a7c", dark: "#12192a", light: "#aebfe7", cloud: "#dde8ff" },
-      { base: "#384b63", dark: "#0a121c", light: "#c2ced8", cloud: "#e7eef4" }
+  nebulae: {
+    cellSize: 1650,
+    density: 0.56,
+    opacity: 0.9,
+    driftSpeed: 0.00012,
+    sizeMin: 950,
+    sizeMax: 1800,
+    palette: [
+      [35, 80, 170],
+      [48, 108, 205],
+      [74, 89, 210],
+      [28, 155, 214],
+      [99, 71, 205],
+      [129, 102, 231],
+      [59, 189, 221],
+      [104, 140, 255]
     ]
-  },
-
-  asteroids: {
-    cellSize: 980,
-    density: 0.34,
-    maxPerCell: 3,
-    minRadius: 5,
-    maxRadius: 28,
-    driftSpeed: 0.00014
   },
 
   shootingStars: {
     enabled: true,
     minDelay: 12000,
-    maxDelay: 28000,
-    duration: 1100
+    maxDelay: 26000,
+    duration: 1450
+  },
+
+  planet: {
+    worldX: 860,
+    worldY: -120,
+    radius: 280,
+    atmosphereColor: "rgba(116, 205, 255, 0.18)",
+    baseColors: {
+      deepOcean: "#11496a",
+      shallowOcean: "#18aab7",
+      brightShelf: "#7fe9d5",
+      land: "#6ec36b",
+      highland: "#6e6b8e",
+      clouds: "#ffffff"
+    }
   },
 
   ambientAudio: {
     enabled: true,
-    volume: 0.017,
     startOnFirstGesture: true
   }
 };
