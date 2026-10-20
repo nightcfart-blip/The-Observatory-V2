@@ -67,25 +67,27 @@ input {
 
 .constellation-line-base {
   fill: none;
-  stroke: rgba(170, 200, 255, 0.18);
+  stroke: rgba(165, 195, 255, 0.16);
   stroke-width: 1.05;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 4px rgba(115, 165, 255, 0.08));
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px rgba(115, 165, 255, 0.07));
 }
 
 .constellation-line-glow {
   fill: none;
   stroke: url(#constellationFlow);
-  stroke-width: 1.8;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
   opacity: 0;
-  stroke-dasharray: 46 1200;
-  stroke-dashoffset: 1246;
+  stroke-dasharray: 44 1200;
+  stroke-dashoffset: 1244;
   filter:
     drop-shadow(0 0 3px rgba(171, 218, 255, 0.75))
-    drop-shadow(0 0 8px rgba(128, 124, 255, 0.28));
+    drop-shadow(0 0 8px rgba(128, 124, 255, 0.22));
 }
 
 .line-a {
@@ -99,7 +101,7 @@ input {
 @keyframes constellationPulseA {
   0%, 34% {
     opacity: 0;
-    stroke-dashoffset: 1246;
+    stroke-dashoffset: 1244;
   }
   36% {
     opacity: 0.78;
@@ -116,7 +118,7 @@ input {
 @keyframes constellationPulseB {
   0%, 49% {
     opacity: 0;
-    stroke-dashoffset: 1246;
+    stroke-dashoffset: 1244;
   }
   51% {
     opacity: 0.72;
@@ -134,8 +136,8 @@ input {
   position: absolute;
   left: 0;
   top: 0;
-  width: 64px;
-  height: 64px;
+  width: 68px;
+  height: 68px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -158,71 +160,67 @@ input {
 }
 
 .nav-star .star-halo {
-  width: calc(var(--star-size, 12px) * 4.6);
-  height: calc(var(--star-size, 12px) * 4.6);
+  width: calc(var(--star-size, 12px) * 2.9);
+  height: calc(var(--star-size, 12px) * 2.9);
   border-radius: 50%;
   background:
     radial-gradient(
       circle,
-      rgba(var(--star-tint, 205, 225, 255), 0.26) 0%,
-      rgba(var(--star-tint, 205, 225, 255), 0.13) 18%,
-      rgba(var(--star-tint, 205, 225, 255), 0.055) 38%,
-      rgba(var(--star-tint, 205, 225, 255), 0.01) 62%,
-      transparent 76%
+      rgba(var(--star-tint, 205, 225, 255), 0.16) 0%,
+      rgba(var(--star-tint, 205, 225, 255), 0.08) 24%,
+      rgba(var(--star-tint, 205, 225, 255), 0.028) 48%,
+      transparent 74%
     );
   filter:
-    blur(0.2px)
-    drop-shadow(0 0 5px rgba(var(--star-tint, 205, 225, 255), 0.35))
-    drop-shadow(0 0 16px rgba(var(--star-tint, 205, 225, 255), 0.18));
+    drop-shadow(0 0 5px rgba(var(--star-tint, 205, 225, 255), 0.22))
+    drop-shadow(0 0 12px rgba(var(--star-tint, 205, 225, 255), 0.1));
   animation: starHaloFloat var(--star-breathe, 7s) ease-in-out infinite alternate;
 }
 
 .nav-star .star-core {
-  width: var(--star-size, 12px);
-  height: var(--star-size, 12px);
-  border-radius: 52% 48% 49% 51% / 48% 54% 46% 52%;
+  width: max(2.6px, calc(var(--star-size, 12px) * 0.24));
+  height: max(2.6px, calc(var(--star-size, 12px) * 0.24));
+  border-radius: 57% 43% 48% 52% / 46% 54% 42% 58%;
   background:
     radial-gradient(
       circle at 35% 35%,
-      rgba(255, 255, 255, 0.98) 0%,
-      rgba(255, 255, 255, 0.98) 16%,
-      rgba(var(--star-tint, 205, 225, 255), 0.96) 32%,
-      rgba(var(--star-tint, 205, 225, 255), 0.48) 56%,
-      rgba(var(--star-tint, 205, 225, 255), 0.08) 78%,
-      transparent 100%
+      rgba(255, 255, 255, 1) 0%,
+      rgba(255, 255, 255, 1) 42%,
+      rgba(var(--star-tint, 205, 225, 255), 0.96) 66%,
+      rgba(var(--star-tint, 205, 225, 255), 0.18) 100%
     );
   box-shadow:
-    0 0 6px rgba(255, 255, 255, 0.55),
-    0 0 15px rgba(var(--star-tint, 205, 225, 255), 0.34);
+    0 0 4px rgba(255, 255, 255, 0.72),
+    0 0 10px rgba(var(--star-tint, 205, 225, 255), 0.3);
 }
 
 .nav-star .star-spike {
-  opacity: 0.66;
-  filter: blur(0.2px);
+  opacity: 0.85;
+  filter: blur(0.15px);
 }
 
 .nav-star .star-spike-x {
-  width: calc(var(--star-size, 12px) * 4.8);
+  width: calc(var(--star-size, 12px) * 2.8);
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(var(--star-tint, 205, 225, 255), 0.16) 15%,
-    rgba(255, 255, 255, 0.9) 50%,
-    rgba(var(--star-tint, 205, 225, 255), 0.16) 85%,
+    rgba(var(--star-tint, 205, 225, 255), 0.12) 16%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(var(--star-tint, 205, 225, 255), 0.12) 84%,
     transparent 100%
   );
 }
 
 .nav-star .star-spike-y {
   width: 1px;
-  height: calc(var(--star-size, 12px) * 4.8);
+  height: calc(var(--star-size, 12px) * 2.8);
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(var(--star-tint, 205, 225, 255), 0.16) 15%,
-    rgba(255, 255, 255, 0.9) 50%,
-    rgba(var(--star-tint, 205, 225, 255), 0.16) 85%,
+    rgba(var(--star-tint, 205, 225, 255), 0.12) 16%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(var(--star-tint, 205, 225, 255), 0.12) 84%,
     transparent 100%
   );
 }
@@ -233,42 +231,42 @@ input {
   top: 66%;
   transform: translateX(-50%);
   font-size: 10px;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   white-space: nowrap;
-  color: rgba(215, 229, 250, 0.5);
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.9);
+  color: rgba(215, 229, 250, 0.48);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.92);
   transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 
 .nav-star:hover .star-label,
 .nav-star.active .star-label {
-  color: rgba(247, 251, 255, 0.95);
+  color: rgba(247, 251, 255, 0.94);
   transform: translateX(-50%) translateY(-1px);
 }
 
 .nav-star:hover .star-core,
 .nav-star.active .star-core {
   box-shadow:
-    0 0 8px rgba(255, 255, 255, 0.7),
-    0 0 22px rgba(var(--star-tint, 205, 225, 255), 0.55);
+    0 0 5px rgba(255, 255, 255, 0.84),
+    0 0 14px rgba(var(--star-tint, 205, 225, 255), 0.42);
 }
 
 .nav-star:hover .star-halo,
 .nav-star.active .star-halo {
   opacity: 1;
   filter:
-    drop-shadow(0 0 8px rgba(var(--star-tint, 205, 225, 255), 0.42))
-    drop-shadow(0 0 22px rgba(var(--star-tint, 205, 225, 255), 0.2));
+    drop-shadow(0 0 6px rgba(var(--star-tint, 205, 225, 255), 0.32))
+    drop-shadow(0 0 18px rgba(var(--star-tint, 205, 225, 255), 0.14));
 }
 
 @keyframes starHaloFloat {
   from {
-    opacity: 0.62;
-    transform: translate(-50%, -50%) scale(0.92);
+    opacity: 0.58;
+    transform: translate(-50%, -50%) scale(0.94);
   }
   to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.11);
+    opacity: 0.96;
+    transform: translate(-50%, -50%) scale(1.08);
   }
 }
 
