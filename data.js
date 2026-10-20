@@ -6,12 +6,12 @@ window.SPACE_CONFIG = {
 
   camera: {
     x: 0, y: 0, zoom: 1,
-    minZoom: 0.45,
-    maxZoom: 2.5
+    minZoom: 0.35,
+    maxZoom: 2.0
   },
 
   startPoint: {
-    x: 0, y: 0, zoom: 1
+    x: 0, y: 0, zoom: 0.35
   },
 
   rendering: {
