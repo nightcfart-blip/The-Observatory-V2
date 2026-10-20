@@ -1,7 +1,7 @@
 :root {
-  --space-black: #01040b;
-  --space-deep: #020814;
-  --space-mid: #071629;
+  color-scheme: dark;
+  --void: #00050c;
+  --void-deep: #000208;
 }
 
 * {
@@ -11,30 +11,35 @@
 
 html,
 body {
-  margin: 0;
   width: 100%;
   height: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
-  background: var(--space-black);
+  background: #00050c;
   overscroll-behavior: none;
+  touch-action: none;
 }
 
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: white;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #universe {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  touch-action: none;
-  user-select: none;
-  cursor: grab;
   background:
-    radial-gradient(circle at 18% 36%, rgba(55, 124, 210, 0.12), transparent 26%),
-    radial-gradient(circle at 72% 22%, rgba(48, 72, 175, 0.08), transparent 28%),
-    linear-gradient(180deg, #030916 0%, #020713 45%, #01040b 100%);
+    radial-gradient(circle at 50% 50%, rgba(7, 17, 36, 0.18) 0%, rgba(0, 3, 8, 0) 45%),
+    linear-gradient(180deg, #00050c 0%, #000309 100%);
+  isolation: isolate;
+  touch-action: none;
+  cursor: grab;
 }
 
 #universe:active {
@@ -46,4 +51,17 @@ body {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+::selection {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  #universe,
+  #spaceCanvas {
+    scroll-behavior: auto;
+  }
 }
