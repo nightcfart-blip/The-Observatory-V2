@@ -6230,6 +6230,746 @@
     requestArchiveImport
   };
 
+
+/* =====================================================
+   GROUP VIEW — STEP 8
+   Add AFTER the existing final })(); in app.js
+===================================================== */
+
+(() => {
+  "use strict";
+
+  const STORE = window.WatchArchive;
+  if (!STORE) return;
+
+  const glass = document.getElementById("glassPanel");
+
+  // ---------------------------------------------------
+  // IMAGE STORAGE — INDEXEDDB
+  // ---------------------------------------------------
+
+  const DB_NAME = "WatchArchiveImages";
+  const STORE_NAME = "images";
+  const imageUrls = new Map();
+
+  let dbPromise = null;
+
+  function openImageDB() {
+    if (dbPromise) return dbPromise;
+
+    dbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB is unavailable"));
+        return;
+      }
+
+      const request = indexedDB.open(DB_NAME, 1);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    return dbPromise;
+  }
+
+  async function saveImage(key, blob) {
+    const db = await openImageDB();
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+
+      tx.objectStore(STORE_NAME).put(blob, key);
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    const previous = imageUrls.get(key);
+
+    if (previous) URL.revokeObjectURL(previous);
+    imageUrls.delete(key);
+  }
+
+  async function loadImage(key) {
+    if (imageUrls.has(key)) {
+      return imageUrls.get(key);
+    }
+
+    const db = await openImageDB();
+
+    const blob = await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(key);
+
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (!blob) return null;
+
+    const url = URL.createObjectURL(blob);
+    imageUrls.set(key, url);
+
+    return url;
+  }
+
+  // Resize large phone photos before saving.
+  async function prepareImage(file, maxWidth = 1500) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Please choose an image.");
+    }
+
+    const sourceUrl = URL.createObjectURL(file);
+
+    try {
+      const picture = new Image();
+      picture.src = sourceUrl;
+
+      await picture.decode();
+
+      const scale = Math.min(
+        1,
+        maxWidth / Math.max(picture.width, picture.height)
+      );
+
+      const width = Math.max(
+        1,
+        Math.round(picture.width * scale)
+      );
+
+      const height = Math.max(
+        1,
+        Math.round(picture.height * scale)
+      );
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) throw new Error("Image processing unavailable.");
+
+      ctx.drawImage(picture, 0, 0, width, height);
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          blob => blob
+            ? resolve(blob)
+            : reject(new Error("Image conversion failed")),
+          "image/jpeg",
+          0.85
+        );
+      });
+
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  }
+
+  function pickImage(onSelected) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+
+    document.body.appendChild(input);
+
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      input.remove();
+
+      if (!file) return;
+
+      try {
+        await onSelected(file);
+      } catch (error) {
+        console.error(error);
+        alert("The image could not be saved.");
+      }
+    }, { once: true });
+
+    input.click();
+  }
+
+  // ---------------------------------------------------
+  // COMMON UI HELPERS
+  // ---------------------------------------------------
+
+  function el(tag, className = "", text = null) {
+    const node = document.createElement(tag);
+
+    if (className) node.className = className;
+    if (text !== null) node.textContent = String(text);
+
+    return node;
+  }
+
+  function action(text, className, callback, label = text) {
+    const button = el("button", className, text);
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", callback);
+    return button;
+  }
+
+  function saveChanges(groupId, changes) {
+    const result = STORE.update("group", groupId, changes);
+
+    if (!result) {
+      console.warn("Group changes could not be saved.");
+    }
+
+    return !!result;
+  }
+
+  function ratingStars(rating) {
+    const wrapper = el("div", "group-rating-stars");
+    wrapper.setAttribute(
+      "aria-label",
+      rating === null
+        ? "Not rated"
+        : `Average rating ${rating.toFixed(2)} out of 10`
+    );
+
+    const amount = rating === null
+      ? 0
+      : Math.max(0, Math.min(10, rating));
+
+    for (let i = 0; i < 10; i++) {
+      const shell = el("span", "group-rating-star");
+      const fill = el("span", "group-rating-star-fill");
+
+      const percentage = Math.max(
+        0,
+        Math.min(100, (amount - i) * 100)
+      );
+
+      fill.style.setProperty("--fill", percentage + "%");
+
+      shell.appendChild(fill);
+      wrapper.appendChild(shell);
+    }
+
+    return wrapper;
+  }
+
+  // ---------------------------------------------------
+  // INDIVIDUALLY ENTERED GENRES
+  // ---------------------------------------------------
+
+  function makeGenreEditor(groupId, field, placeholder) {
+    const section = el(
+      "div",
+      "group-genre-field" +
+        (field === "tags" ? " secondary" : "")
+    );
+
+    const items = el("div", "group-genre-items");
+
+    const input = el("input", "group-genre-input");
+    input.type = "text";
+    input.placeholder = placeholder;
+    input.setAttribute("aria-label", placeholder);
+
+    function currentValues() {
+      return [
+        ...(STORE.get("group", groupId)?.[field] || [])
+      ];
+    }
+
+    function saveValues(values) {
+      if (saveChanges(groupId, {
+        [field]: values
+      })) {
+        drawChips();
+      }
+    }
+
+    function drawChips() {
+      items.replaceChildren();
+
+      currentValues().forEach((genre, index) => {
+        const chip = el("span", "group-genre-chip");
+
+        chip.appendChild(
+          el("span", "", genre)
+        );
+
+        chip.appendChild(
+          action("×", "", () => {
+            const values = currentValues();
+            values.splice(index, 1);
+            saveValues(values);
+          }, `Remove ${genre}`)
+        );
+
+        items.appendChild(chip);
+      });
+
+      items.appendChild(input);
+    }
+
+    function addGenre() {
+      const value = input.value.trim()
+        .replace(/,$/, "")
+        .trim();
+
+      if (!value) return;
+
+      const values = currentValues();
+
+      if (!values.some(
+        item => item.toLowerCase() === value.toLowerCase()
+      )) {
+        values.push(value);
+        saveValues(values);
+      }
+
+      input.value = "";
+    }
+
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === ",") {
+        event.preventDefault();
+        addGenre();
+      }
+    });
+
+    input.addEventListener("blur", addGenre);
+
+    drawChips();
+    section.appendChild(items);
+
+    return section;
+  }
+
+  // ---------------------------------------------------
+  // CURVED HORIZONTAL PRODUCTION CAROUSEL
+  // ---------------------------------------------------
+
+  function makeGallery(groupId) {
+    const region = el("section", "group-gallery-region");
+    const viewport = el("div", "group-gallery-viewport");
+    const track = el("div", "group-gallery-track");
+
+    viewport.setAttribute(
+      "aria-label",
+      "Productions in this group"
+    );
+
+    const productions = STORE.children("group", groupId);
+
+    for (const production of productions) {
+      const card = el("div", "group-production-card");
+
+      const cover = el("img");
+      cover.alt = "";
+      cover.loading = "lazy";
+      cover.style.display = "none";
+
+      card.appendChild(cover);
+
+      const coverKey = "production-cover:" + production.id;
+
+      loadImage(coverKey).then(url => {
+        if (url) {
+          cover.src = url;
+          cover.style.display = "block";
+        }
+      }).catch(console.warn);
+
+      const open = action(
+        "",
+        "group-production-open",
+        () => {
+          window.SpaceUniverse.openArchiveEntry(
+            "production",
+            production.id
+          );
+        },
+        `Open ${production.title}`
+      );
+
+      card.appendChild(open);
+
+      card.appendChild(
+        el(
+          "span",
+          "group-production-title",
+          production.title
+        )
+      );
+
+      const editCover = action(
+        "✎",
+        "group-production-image-edit",
+        () => {
+          pickImage(async file => {
+            const blob = await prepareImage(file, 900);
+            await saveImage(coverKey, blob);
+
+            const url = await loadImage(coverKey);
+
+            if (url) {
+              cover.src = url;
+              cover.style.display = "block";
+            }
+          });
+        },
+        `Choose gallery image for ${production.title}`
+      );
+
+      card.appendChild(editCover);
+      track.appendChild(card);
+    }
+
+    const addCard = action(
+      "",
+      "group-production-card group-production-add",
+      () => {
+        window.WatchArchiveApp.openCreationForm(
+          "production",
+          { groupId }
+        );
+      },
+      "Add Production"
+    );
+
+    addCard.append(
+      el("span", "", "+"),
+      el("small", "", "PRODUCTION")
+    );
+
+    track.appendChild(addCard);
+
+    viewport.appendChild(track);
+    region.appendChild(viewport);
+
+    // Actual curved carousel:
+    // card transforms respond continuously to scroll position.
+    function updateCurve() {
+      const viewCenter =
+        viewport.scrollLeft + viewport.clientWidth / 2;
+
+      const cards = [
+        ...track.querySelectorAll(".group-production-card")
+      ];
+
+      for (const card of cards) {
+        const cardCenter =
+          card.offsetLeft + card.offsetWidth / 2;
+
+        const distance =
+          (cardCenter - viewCenter) / 210;
+
+        const limited = Math.max(
+          -2,
+          Math.min(2, distance)
+        );
+
+        const abs = Math.abs(limited);
+
+        const y = abs * abs * 20;
+        const rotation = -limited * 24;
+        const scale = 1 - Math.min(.22, abs * .11);
+
+        card.style.setProperty(
+          "--arc-y", y.toFixed(2) + "px"
+        );
+
+        card.style.setProperty(
+          "--arc-rotate", rotation.toFixed(2) + "deg"
+        );
+
+        card.style.setProperty(
+          "--arc-scale", scale.toFixed(3)
+        );
+
+        card.classList.toggle(
+          "is-center", abs < .37
+        );
+      }
+    }
+
+    let queued = false;
+
+    viewport.addEventListener("scroll", () => {
+      if (queued) return;
+
+      queued = true;
+
+      requestAnimationFrame(() => {
+        queued = false;
+        updateCurve();
+      });
+    }, { passive: true });
+
+    // Scrolling remains native and touch-friendly.
+    // The transforms change visual depth, not scroll offsets.
+    requestAnimationFrame(updateCurve);
+
+    return region;
+  }
+
+  // ---------------------------------------------------
+  // MAIN GROUP RENDERER
+  // ---------------------------------------------------
+
+  function render(container, groupId) {
+    const group = STORE.get("group", groupId);
+
+    if (!group) {
+      container.textContent = "Group unavailable.";
+      return;
+    }
+
+    const root = el("article", "group-view");
+
+    // BANNER
+
+    const banner = el("div", "group-banner");
+
+    const bannerImage = el(
+      "img",
+      "group-banner-image"
+    );
+
+    bannerImage.alt = "";
+    bannerImage.style.display = "none";
+
+    banner.appendChild(bannerImage);
+
+    const bannerKey = "group-banner:" + groupId;
+
+    loadImage(bannerKey).then(url => {
+      if (url) {
+        bannerImage.src = url;
+        bannerImage.style.display = "block";
+      } else if (group.banner) {
+        bannerImage.src = group.banner;
+        bannerImage.style.display = "block";
+      }
+    }).catch(() => {
+      if (group.banner) {
+        bannerImage.src = group.banner;
+        bannerImage.style.display = "block";
+      }
+    });
+
+    banner.appendChild(
+      el("span", "group-banner-empty-mark", " ")
+    );
+
+    banner.appendChild(
+      action(
+        "✎",
+        "group-banner-edit",
+        () => {
+          pickImage(async file => {
+            const blob = await prepareImage(file, 1600);
+            await saveImage(bannerKey, blob);
+
+            const url = await loadImage(bannerKey);
+            if (url) {
+              bannerImage.src = url;
+              bannerImage.style.display = "block";
+            }
+          });
+        },
+        "Choose banner from gallery"
+      )
+    );
+
+    banner.appendChild(
+      action(
+        "×",
+        "group-close",
+        () => {
+          document.getElementById("closePanel").click();
+        },
+        "Close Group"
+      )
+    );
+
+    root.appendChild(banner);
+
+    // TITLE + AVERAGE RATING
+
+    const identity = el("div", "group-identity");
+    const heading = el("div", "group-heading");
+
+    const titleInput = el(
+      "input",
+      "group-title-input"
+    );
+
+    titleInput.type = "text";
+    titleInput.value = group.title;
+    titleInput.setAttribute("aria-label", "Group title");
+
+    titleInput.addEventListener("change", () => {
+      const title = titleInput.value.trim();
+
+      if (!title) {
+        titleInput.value =
+          STORE.get("group", groupId)?.title || "";
+        return;
+      }
+
+      if (saveChanges(groupId, { title })) {
+        const panelTitle =
+          document.getElementById("panelTitle");
+
+        if (panelTitle) panelTitle.textContent = title;
+      }
+    });
+
+    heading.appendChild(titleInput);
+
+    const rating = STORE.calculatedRating(
+      "group",
+      group
+    );
+
+    const ratingRow = el(
+      "div",
+      "group-rating-row"
+    );
+
+    ratingRow.appendChild(ratingStars(rating));
+
+    const numeric = rating === null
+      ? "(—)"
+      : `(${Number(rating.toFixed(2))})`;
+
+    ratingRow.appendChild(
+      el("span", "group-rating-number", numeric)
+    );
+
+    heading.appendChild(ratingRow);
+    identity.appendChild(heading);
+
+    // MANUALLY ENTERED GENRES
+
+    const genres = el("div", "group-genres");
+
+    genres.appendChild(
+      makeGenreEditor(
+        groupId,
+        "genres",
+        "Main genres..."
+      )
+    );
+
+    genres.appendChild(
+      makeGenreEditor(
+        groupId,
+        "tags",
+        "Secondary genres..."
+      )
+    );
+
+    identity.appendChild(genres);
+    root.appendChild(identity);
+
+    // SEAMLESS OPINION
+
+    const opinion = el("div", "group-opinion");
+
+    const textarea = el("textarea");
+    textarea.value = group.notes || "";
+    textarea.placeholder = " ";
+    textarea.setAttribute(
+      "aria-label",
+      "Personal opinion"
+    );
+
+    let saveTimer = null;
+
+    function saveOpinion() {
+      clearTimeout(saveTimer);
+      saveChanges(groupId, {
+        notes: textarea.value
+      });
+    }
+
+    textarea.addEventListener("input", () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveOpinion, 650);
+    });
+
+    textarea.addEventListener("blur", saveOpinion);
+
+    opinion.appendChild(textarea);
+    root.appendChild(opinion);
+
+    // CURVED MINI LIBRARY
+
+    root.appendChild(
+      makeGallery(groupId)
+    );
+
+    // MINIMAL FOOTER
+
+    const footer = el(
+      "div",
+      "group-footer-actions"
+    );
+
+    footer.appendChild(
+      action(
+        "← Library",
+        "group-minimal-action",
+        () => {
+          window.WatchArchiveApp.openMenu("library");
+        }
+      )
+    );
+
+    footer.appendChild(
+      action(
+        "+ Production",
+        "group-minimal-action",
+        () => {
+          window.WatchArchiveApp.openCreationForm(
+            "production",
+            { groupId }
+          );
+        }
+      )
+    );
+
+    root.appendChild(footer);
+
+    container.replaceChildren(root);
+  }
+
+  window.GroupView = {
+    render,
+    open(groupId) {
+      window.SpaceUniverse.openArchiveEntry(
+        "group",
+        groupId
+      );
+    }
+  };
+
+  window.addEventListener("beforeunload", () => {
+    for (const url of imageUrls.values()) {
+      URL.revokeObjectURL(url);
+    }
+  });
+  
   // ==========================================================
   // START APP
   // ==========================================================
