@@ -1,79 +1,177 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-  />
-  <title>Watch Archive</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <canvas id="spaceCanvas"></canvas>
+    content="width=device-width, initial-scale=1.0,
+    maximum-scale=1.0, user-scalable=no"
+  >
+  <meta name="theme-color" content="#01050d">
+  <meta name="color-scheme" content="dark">
 
-  <div id="worldUI">
-    <div id="archiveSky" class="archive-sky">
-      <svg id="archiveLines" class="archive-lines" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+  <title>Watch Archive</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <main id="universe">
+
+    <!-- EXISTING SPACE ENVIRONMENT -->
+    <canvas id="spaceCanvas" aria-hidden="true"></canvas>
+
+    <!-- CREATED LIBRARY CONSTELLATIONS -->
+    <div id="archiveSky" aria-label="Archive constellations">
+      <svg
+        id="archiveLines"
+        class="world-lines"
+        aria-hidden="true"
+        preserveAspectRatio="none"
+      ></svg>
+
       <div id="archiveStars" class="archive-stars"></div>
     </div>
 
-    <div id="constellationLayer" class="constellation-layer">
-      <svg id="constellationSvg" class="constellation-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <path id="lineA-base" class="constellation-line base" d="" />
-        <path id="lineB-base" class="constellation-line base" d="" />
-        <path id="lineA-glow" class="constellation-line glow" d="" />
-        <path id="lineB-glow" class="constellation-line glow" d="" />
+    <!-- NORMA MAIN NAVIGATION -->
+    <nav id="constellationLayer" aria-label="Main menu">
+
+      <svg
+        id="constellationSvg"
+        class="constellation-svg"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient
+            id="constellationFlow"
+            x1="0%" y1="0%"
+            x2="100%" y2="0%"
+          >
+            <stop offset="0%" stop-color="#8dc5ff" stop-opacity="0"/>
+            <stop offset="45%" stop-color="#8dc5ff"/>
+            <stop offset="52%" stop-color="#f4fbff"/>
+            <stop offset="65%" stop-color="#a087ff"/>
+            <stop offset="100%" stop-color="#8dc5ff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <path id="lineA-base" class="constellation-line-base"></path>
+        <path id="lineB-base" class="constellation-line-base"></path>
+        <path id="lineA-glow" class="constellation-line-glow line-a"></path>
+        <path id="lineB-glow" class="constellation-line-glow line-b"></path>
       </svg>
 
       <button class="nav-star" data-panel="settings" aria-label="Settings">
-        <span class="nav-core"></span>
-        <span class="nav-label">Settings</span>
+        <span class="star-halo"></span>
+        <span class="star-spike star-spike-x"></span>
+        <span class="star-spike star-spike-y"></span>
+        <span class="star-core"></span>
+        <span class="star-label">Settings</span>
       </button>
 
       <button class="nav-star" data-panel="library" aria-label="Library">
-        <span class="nav-core"></span>
-        <span class="nav-label">Library</span>
+        <span class="star-halo"></span>
+        <span class="star-spike star-spike-x"></span>
+        <span class="star-spike star-spike-y"></span>
+        <span class="star-core"></span>
+        <span class="star-label">Library</span>
       </button>
 
       <button class="nav-star" data-panel="creation" aria-label="Creation">
-        <span class="nav-core"></span>
-        <span class="nav-label">Creation</span>
+        <span class="star-halo"></span>
+        <span class="star-spike star-spike-x"></span>
+        <span class="star-spike star-spike-y"></span>
+        <span class="star-core"></span>
+        <span class="star-label">Creation</span>
       </button>
 
       <button class="nav-star" data-panel="watchlist" aria-label="Watchlist">
-        <span class="nav-core"></span>
-        <span class="nav-label">Watchlist</span>
+        <span class="star-halo"></span>
+        <span class="star-spike star-spike-x"></span>
+        <span class="star-spike star-spike-y"></span>
+        <span class="star-core"></span>
+        <span class="star-label">Watchlist</span>
       </button>
 
       <button class="nav-star" data-panel="statistics" aria-label="Statistics">
-        <span class="nav-core"></span>
-        <span class="nav-label">Statistics</span>
+        <span class="star-halo"></span>
+        <span class="star-spike star-spike-x"></span>
+        <span class="star-spike star-spike-y"></span>
+        <span class="star-core"></span>
+        <span class="star-label">Statistics</span>
       </button>
-    </div>
+    </nav>
 
-    <button id="homeBtn" class="home-btn" type="button" aria-label="Return to start">
-      ⌂
+    <!-- RETURN HOME -->
+    <button
+      id="homeBtn"
+      class="home-button"
+      type="button"
+      aria-label="Return to starting position"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M12 3 3.5 10.5V21h17V10.5L12 3Z"/>
+        <path d="M9 21v-7h6v7"/>
+      </svg>
     </button>
 
-    <aside id="glassPanel" class="glass-panel" aria-hidden="true" inert>
-      <div class="glass-shell">
-        <div class="glass-head">
-          <div class="glass-head-copy">
-            <div id="panelEyebrow" class="panel-eyebrow">WATCH ARCHIVE</div>
-            <h2 id="panelTitle" class="panel-title">Panel</h2>
-          </div>
-          <button id="closePanel" class="close-btn" type="button" aria-label="Close panel">×</button>
+    <!-- FLOATING GLASS WINDOW -->
+    <section
+      id="glassPanel"
+      class="glass-panel"
+      role="dialog"
+      aria-label="Archive window"
+      aria-hidden="true"
+      inert
+    >
+
+      <div class="glass-prism-layer prism-a"></div>
+      <div class="glass-prism-layer prism-b"></div>
+      <div class="glass-prism-layer prism-c"></div>
+      <div class="glass-inner-refraction"></div>
+
+      <header class="glass-header">
+        <div class="glass-title-wrap">
+          <span id="panelEyebrow" class="glass-eyebrow">
+            WATCH ARCHIVE
+          </span>
+          <h2 id="panelTitle">Archive</h2>
         </div>
 
-        <div id="panelToolbar" class="panel-toolbar" hidden></div>
-        <div id="panelContent" class="panel-content"></div>
-        <div id="panelFooter" class="panel-footer" hidden></div>
-      </div>
-    </aside>
+        <button
+          id="closePanel"
+          class="glass-close"
+          type="button"
+          aria-label="Close window"
+        >×</button>
+      </header>
 
-    <div id="toast" class="toast"></div>
-  </div>
+      <div id="panelToolbar" class="panel-toolbar" hidden></div>
+
+      <div id="panelContent" class="glass-content"></div>
+
+      <footer id="panelFooter" class="glass-footer" hidden></footer>
+
+    </section>
+
+    <!-- LOW-PROFILE NOTIFICATIONS -->
+    <div
+      id="toast"
+      class="archive-toast"
+      role="status"
+      aria-live="polite"
+    ></div>
+
+  </main>
 
   <script src="data.js"></script>
   <script src="app.js"></script>
