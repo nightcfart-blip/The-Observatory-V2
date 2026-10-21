@@ -3423,8 +3423,22 @@
   // ARCHIVE ENTRY VIEWER
   // ==========================================================
 
-  function openArchiveEntry(type, id) {
+   function openArchiveEntry(type, id) {
     const item = STORE.get(type, id);
+
+    if (type === "group" && item) {
+      openSubPanel({
+        key: `entry-group-${id}`,
+        title: item.title,
+        eyebrow: "GROUP",
+        wide: true,
+        builder(container) {
+          window.GroupView.render(container, id);
+        }
+      });
+      return;
+    }
+
     if (!item) {
       showToast("This entry no longer exists.");
       return;
