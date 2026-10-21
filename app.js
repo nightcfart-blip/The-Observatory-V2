@@ -1,6 +1,15 @@
+
 "use strict";
 
 (() => {
+  // ==========================================================
+  // WATCH ARCHIVE — STEP 7
+  // APP.JS — PART 1 OF 2
+  //
+  // Part 2 continues inside this same function.
+  // Do not add a closing })(); until Part 2.
+  // ==========================================================
+
   const C = window.SPACE_CONFIG;
   const AC = window.ARCHIVE_CONFIG;
   const STORE = window.WatchArchive;
@@ -8,38 +17,175 @@
   const U = window.ArchiveUtil;
 
   const canvas = document.getElementById("spaceCanvas");
+
+  if (!C || !AC || !STORE || !STATS || !U || !canvas) {
+    console.error("Watch Archive: required files are missing.");
+    return;
+  }
+
   const ctx = canvas.getContext("2d", { alpha: false });
 
+  if (!ctx) {
+    console.error("Watch Archive: canvas is unavailable.");
+    return;
+  }
+
+  const TAU = Math.PI * 2;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const clamp = (value, min, max) =>
+    Math.max(min, Math.min(max, value));
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const camera = { ...C.camera };
+  const scene = { ...C.baseScene };
+
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
+
+  const pointers = new Map();
+  const nebulaCache = new Map();
+
+  let W = 0;
+  let H = 0;
+  let DPR = 1;
+
+  let lastFrame = 0;
+  let previousTime = 0;
+  let sceneTime = 0;
+
+  let pinchState = null;
+  let shootingStar = null;
+  let nextMeteor = 0;
+
+  let audioCtx = null;
+  let masterGain = null;
+
+  let activePanel = null;
+  let panelHistory = [];
+
+  let archiveSkyDirty = true;
+  let archiveStarSignature = "";
+  let archiveSkyNodes = new Map();
+
+  let toastTimer = null;
+
+  // ==========================================================
+  // DOM ELEMENTS
+  // ==========================================================
+
   const DOM = {
-    constellationLayer: document.getElementById("constellationLayer"),
-    constellationSvg: document.getElementById("constellationSvg"),
-    lineABase: document.getElementById("lineA-base"),
-    lineBBase: document.getElementById("lineB-base"),
-    lineAGlow: document.getElementById("lineA-glow"),
-    lineBGlow: document.getElementById("lineB-glow"),
-    archiveLines: document.getElementById("archiveLines"),
-    archiveStars: document.getElementById("archiveStars"),
-    panel: document.getElementById("glassPanel"),
-    panelTitle: document.getElementById("panelTitle"),
-    panelEyebrow: document.getElementById("panelEyebrow"),
-    panelContent: document.getElementById("panelContent"),
-    panelToolbar: document.getElementById("panelToolbar"),
-    panelFooter: document.getElementById("panelFooter"),
-    closePanel: document.getElementById("closePanel"),
-    homeBtn: document.getElementById("homeBtn"),
-    toast: document.getElementById("toast")
+    constellationLayer:
+      document.getElementById("constellationLayer"),
+
+    constellationSvg:
+      document.getElementById("constellationSvg"),
+
+    lineABase:
+      document.getElementById("lineA-base"),
+
+    lineBBase:
+      document.getElementById("lineB-base"),
+
+    lineAGlow:
+      document.getElementById("lineA-glow"),
+
+    lineBGlow:
+      document.getElementById("lineB-glow"),
+
+    archiveSky:
+      document.getElementById("archiveSky"),
+
+    archiveLines:
+      document.getElementById("archiveLines"),
+
+    archiveStars:
+      document.getElementById("archiveStars"),
+
+    panel:
+      document.getElementById("glassPanel"),
+
+    panelTitle:
+      document.getElementById("panelTitle"),
+
+    panelEyebrow:
+      document.getElementById("panelEyebrow"),
+
+    panelContent:
+      document.getElementById("panelContent"),
+
+    panelToolbar:
+      document.getElementById("panelToolbar"),
+
+    panelFooter:
+      document.getElementById("panelFooter"),
+
+    closePanel:
+      document.getElementById("closePanel"),
+
+    homeBtn:
+      document.getElementById("homeBtn"),
+
+    toast:
+      document.getElementById("toast")
   };
 
-  const navButtons = [...document.querySelectorAll(".nav-star")];
-  const TAU = Math.PI * 2;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const navButtons = [
+    ...DOM.constellationLayer.querySelectorAll(".nav-star")
+  ];
+
+  // ==========================================================
+  // NORMA NAVIGATION CONSTELLATION
+  // ==========================================================
 
   const NAV_STARS = [
-    { panel: "settings", x: -260, y: -110, size: 15, tint: "198,222,255", breathe: "7.8s" },
-    { panel: "library", x: -130, y: -255, size: 18, tint: "232,239,255", breathe: "8.6s" },
-    { panel: "creation", x: 24, y: -180, size: 20, tint: "196,204,255", breathe: "6.8s" },
-    { panel: "watchlist", x: 210, y: -310, size: 16, tint: "198,236,255", breathe: "9s" },
-    { panel: "statistics", x: 152, y: 18, size: 17, tint: "220,203,255", breathe: "7.5s" }
+    {
+      panel: "settings",
+      x: -290,
+      y: -80,
+      depth: 1.08,
+      size: 11,
+      tint: "192,214,255",
+      breathe: "7.1s"
+    },
+    {
+      panel: "library",
+      x: -160,
+      y: -250,
+      depth: 1.08,
+      size: 14,
+      tint: "223,232,255",
+      breathe: "8.4s"
+    },
+    {
+      panel: "creation",
+      x: 18,
+      y: -165,
+      depth: 1.08,
+      size: 17,
+      tint: "178,188,255",
+      breathe: "6.8s"
+    },
+    {
+      panel: "watchlist",
+      x: 220,
+      y: -300,
+      depth: 1.08,
+      size: 12,
+      tint: "184,231,255",
+      breathe: "8.9s"
+    },
+    {
+      panel: "statistics",
+      x: 150,
+      y: 18,
+      depth: 1.08,
+      size: 13,
+      tint: "201,182,255",
+      breathe: "7.6s"
+    }
   ];
 
   const NAV_LINES = [
@@ -47,73 +193,199 @@
     [2, 4, 3]
   ];
 
-  const camera = { ...C.camera };
-  const scene = { ...C.baseScene };
-
-  let W = 0;
-  let H = 0;
-  let DPR = 1;
-  let sceneTime = 0;
-  let lastFrame = 0;
-  let previousTime = 0;
-  let shootingStar = null;
-  let nextMeteor = 0;
-  let toastTimer = null;
-  let activePanel = null;
-  let archiveNodes = new Map();
-  let archiveSignature = "";
-  let archiveDirty = true;
-  let pointers = new Map();
-  let pinchState = null;
-  let audioCtx = null;
-  let masterGain = null;
-  const nebulaCache = new Map();
+  // ==========================================================
+  // SETTINGS PERSISTENCE
+  // ==========================================================
 
   try {
-    const saved = JSON.parse(localStorage.getItem("watchArchiveSpaceSettings") || "{}");
-    Object.keys(scene).forEach(key => {
-      if (typeof saved[key] === "number" && Number.isFinite(saved[key])) {
-        scene[key] = saved[key];
+    const stored = JSON.parse(
+      localStorage.getItem("watchArchiveSpaceSettings") || "{}"
+    );
+
+    for (const key of Object.keys(scene)) {
+      if (
+        typeof stored[key] === "number" &&
+        Number.isFinite(stored[key])
+      ) {
+        scene[key] = stored[key];
       }
-    });
+    }
   } catch (error) {
-    console.warn(error);
+    console.warn("Space settings could not be loaded.", error);
   }
 
   function saveSpaceSettings() {
-    localStorage.setItem("watchArchiveSpaceSettings", JSON.stringify(scene));
+    try {
+      localStorage.setItem(
+        "watchArchiveSpaceSettings",
+        JSON.stringify(scene)
+      );
+      return true;
+    } catch (error) {
+      console.warn("Space settings could not be saved.", error);
+      return false;
+    }
   }
 
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
+  // ==========================================================
+  // RANDOM GENERATION UTILITIES
+  // ==========================================================
+
+  function hash(a, b, salt = 0) {
+    let n =
+      Math.imul((a | 0) ^ 0x9e3779b1, 374761393) ^
+      Math.imul((b | 0) ^ 0x85ebca77, 668265263) ^
+      Math.imul((salt + C.seed) | 0, 2246822519);
+
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
   }
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+
+    return () => {
+      t += 0x6d2b79f5;
+
+      let s = t;
+
+      s = Math.imul(s ^ (s >>> 15), s | 1);
+      s ^= s + Math.imul(s ^ (s >>> 7), s | 61);
+
+      return ((s ^ (s >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function rngFor(x, y, salt = 0) {
+    return mulberry32(
+      (hash(x, y, salt) * 4294967295) >>> 0
+    );
+  }
+
+  function choose(array, random) {
+    return array[Math.floor(random() * array.length)];
+  }
+
+  function rgba(color, opacity) {
+    return `rgba(${color[0]},${color[1]},${color[2]},${opacity})`;
+  }
+
+  function hexRgb(hex) {
+    const n = parseInt(hex.replace("#", ""), 16);
+
+    return [
+      (n >> 16) & 255,
+      (n >> 8) & 255,
+      n & 255
+    ];
+  }
+
+  function circle(x, y, radius) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, TAU);
+  }
+
+  function svgElement(tag, attributes = {}) {
+    const node = document.createElementNS(SVG_NS, tag);
+
+    for (const [key, value] of Object.entries(attributes)) {
+      node.setAttribute(key, String(value));
+    }
+
+    return node;
   }
 
   function element(tag, className = "", text = null) {
     const node = document.createElement(tag);
+
     if (className) node.className = className;
-    if (text !== null) node.textContent = text;
+
+    if (text !== null) {
+      node.textContent = String(text);
+    }
+
     return node;
   }
 
-  function svg(tag, attrs = {}) {
-    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    Object.entries(attrs).forEach(([key, value]) => {
-      node.setAttribute(key, String(value));
+  function formatRating(value) {
+    return typeof value === "number" &&
+      Number.isFinite(value)
+      ? value.toFixed(2).replace(/0$/, "").replace(/\.$/, "") +
+        " / 10"
+      : "Unrated";
+  }
+
+  function formatDuration(minutes) {
+    const total = Math.max(0, Math.round(Number(minutes) || 0));
+    const hours = Math.floor(total / 60);
+    const rest = total % 60;
+
+    if (!hours) return `${rest}m`;
+    if (!rest) return `${hours}h`;
+
+    return `${hours}h ${rest}m`;
+  }
+
+  function readableDate(value) {
+    if (!value) return "Not specified";
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value);
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
     });
-    return node;
   }
 
   function showToast(message) {
+    if (!DOM.toast) return;
+
     clearTimeout(toastTimer);
+
     DOM.toast.textContent = String(message);
     DOM.toast.classList.add("show");
+
     toastTimer = setTimeout(() => {
       DOM.toast.classList.remove("show");
-    }, 2600);
+    }, 3100);
+  }
+
+  // ==========================================================
+  // CAMERA AND COORDINATES
+  // ==========================================================
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    DPR = Math.min(
+      window.devicePixelRatio || 1,
+      C.rendering.maxPixelRatio
+    );
+
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+
+    DOM.constellationSvg.setAttribute(
+      "viewBox",
+      `0 0 ${W} ${H}`
+    );
+
+    DOM.archiveLines.setAttribute(
+      "viewBox",
+      `0 0 ${W} ${H}`
+    );
+
+    archiveSkyDirty = true;
   }
 
   function project(x, y, depth = 1, scale = camera.zoom) {
@@ -123,54 +395,18 @@
     };
   }
 
-  function resize() {
-    W = window.innerWidth;
-    H = window.innerHeight;
-    DPR = Math.min(window.devicePixelRatio || 1, C.rendering.maxPixelRatio);
-
-    canvas.width = Math.round(W * DPR);
-    canvas.height = Math.round(H * DPR);
-    canvas.style.width = `${W}px`;
-    canvas.style.height = `${H}px`;
-
-    DOM.constellationSvg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    DOM.archiveLines.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    archiveDirty = true;
-  }
-
-  function resetToStart() {
-    camera.x = C.startPoint.x;
-    camera.y = C.startPoint.y;
-    camera.zoom = C.startPoint.zoom;
-    archiveDirty = true;
-  }
-
-  function focusWorldPoint(x, y, zoom = camera.zoom) {
-    camera.x = x;
-    camera.y = y;
-    camera.zoom = clamp(zoom, C.camera.minZoom, C.camera.maxZoom);
-    archiveDirty = true;
-  }
-
-  function formatRating(value) {
-    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-    return value.toFixed(1);
-  }
-
-  function formatDuration(minutes) {
-    const total = Math.max(0, Math.round(Number(minutes) || 0));
-    const hours = Math.floor(total / 60);
-    const rest = total % 60;
-    if (!hours) return `${rest}m`;
-    if (!rest) return `${hours}h`;
-    return `${hours}h ${rest}m`;
-  }
-
-  function visibleCells(size, depth = 1, scale = camera.zoom, margin = 1) {
+  function visibleCells(
+    size,
+    depth = 1,
+    scale = camera.zoom,
+    margin = 1
+  ) {
     const centerX = camera.x * depth;
     const centerY = camera.y * depth;
+
     const hw = W / (2 * scale);
     const hh = H / (2 * scale);
+
     const cells = [];
 
     const minX = Math.floor((centerX - hw) / size) - margin;
@@ -187,100 +423,146 @@
     return cells;
   }
 
-  function hash(a, b, salt = 0) {
-    let n =
-      Math.imul((a | 0) ^ 0x9e3779b1, 374761393) ^
-      Math.imul((b | 0) ^ 0x85ebca77, 668265263) ^
-      Math.imul((salt + C.seed) | 0, 2246822519);
+  function resetToStart() {
+    camera.x = C.startPoint.x;
+    camera.y = C.startPoint.y;
+    camera.zoom = C.startPoint.zoom;
 
-    n = Math.imul(n ^ (n >>> 13), 1274126177);
-    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    archiveSkyDirty = true;
   }
 
-  function mulberry32(seed) {
-    let t = seed >>> 0;
-    return () => {
-      t += 0x6d2b79f5;
-      let s = t;
-      s = Math.imul(s ^ (s >>> 15), s | 1);
-      s ^= s + Math.imul(s ^ (s >>> 7), s | 61);
-      return ((s ^ (s >>> 14)) >>> 0) / 4294967296;
-    };
+  function focusWorldPoint(x, y, zoom = camera.zoom) {
+    camera.x = x;
+    camera.y = y;
+
+    camera.zoom = clamp(
+      zoom,
+      C.camera.minZoom,
+      C.camera.maxZoom
+    );
+
+    archiveSkyDirty = true;
   }
 
-  function rngFor(x, y, salt = 0) {
-    return mulberry32((hash(x, y, salt) * 4294967295) >>> 0);
-  }
-
-  function choose(array, random) {
-    return array[Math.floor(random() * array.length)];
-  }
-
-  function rgba(color, opacity) {
-    return `rgba(${color[0]},${color[1]},${color[2]},${opacity})`;
-  }
-
-  function hexRgb(hex) {
-    const n = parseInt(hex.replace("#", ""), 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  }
-
-  function circle(x, y, radius) {
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, TAU);
-  }
+  // ==========================================================
+  // DEEP SPACE BACKGROUND
+  // ==========================================================
 
   function drawBackground() {
     const gradient = ctx.createLinearGradient(0, 0, 0, H);
+
     gradient.addColorStop(0, C.sky.backgroundTop);
     gradient.addColorStop(1, C.sky.backgroundBottom);
+
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, W, H);
 
-    const vignette = ctx.createRadialGradient(W * 0.5, H * 0.45, Math.min(W, H) * 0.1, W * 0.5, H * 0.5, Math.max(W, H) * 0.74);
+    const vignette = ctx.createRadialGradient(
+      W * 0.5,
+      H * 0.45,
+      Math.min(W, H) * 0.1,
+      W * 0.5,
+      H * 0.5,
+      Math.max(W, H) * 0.74
+    );
+
     vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(1, `rgba(0,0,0,${C.sky.vignetteStrength})`);
+
+    vignette.addColorStop(
+      1,
+      `rgba(0,0,0,${C.sky.vignetteStrength})`
+    );
+
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, W, H);
   }
 
+  // ==========================================================
+  // PROCEDURAL NEBULA SPRITES
+  // ==========================================================
+
   function buildNebulaSprite(layerIndex, cellX, cellY) {
-    const key = [layerIndex, cellX, cellY, scene.nebulaColorVariance.toFixed(2)].join(":");
-    if (nebulaCache.has(key)) return nebulaCache.get(key);
+    const key = [
+      layerIndex,
+      cellX,
+      cellY,
+      scene.nebulaColorVariance.toFixed(2)
+    ].join(":");
+
+    if (nebulaCache.has(key)) {
+      const cached = nebulaCache.get(key);
+
+      nebulaCache.delete(key);
+      nebulaCache.set(key, cached);
+
+      return cached;
+    }
 
     const layer = C.nebulae.layers[layerIndex];
-    const rnd = rngFor(cellX, cellY, 9000 + layerIndex * 31);
+
+    const rnd = rngFor(
+      cellX,
+      cellY,
+      9137 + layerIndex * 101
+    );
 
     const sprite = document.createElement("canvas");
+
     sprite.width = 768;
     sprite.height = 768;
 
     const g = sprite.getContext("2d");
+    if (!g) return null;
+
     const palette = C.nebulae.palette;
-    const colors = [choose(palette, rnd), choose(palette, rnd), choose(palette, rnd)];
+
+    const colors = [
+      choose(palette, rnd),
+      choose(palette, rnd),
+      choose(palette, rnd)
+    ];
 
     function colorize(color) {
-      const average = (color[0] + color[1] + color[2]) / 3;
+      const average =
+        (color[0] + color[1] + color[2]) / 3;
+
       return color.map(value =>
-        Math.round(clamp(average + (value - average) * scene.nebulaColorVariance, 0, 255))
+        Math.round(clamp(
+          average +
+            (value - average) *
+            scene.nebulaColorVariance,
+          0,
+          255
+        ))
       );
     }
 
     function drawCloud(x, y, rx, ry, color, alpha) {
       const radius = Math.max(rx, ry);
+
       if (radius <= 0) return;
 
       g.save();
       g.translate(x, y);
       g.scale(rx / radius, ry / radius);
 
-      const grad = g.createRadialGradient(0, 0, 0, 0, 0, radius);
-      grad.addColorStop(0, rgba(color, alpha));
-      grad.addColorStop(0.22, rgba(color, alpha * 0.72));
-      grad.addColorStop(0.56, rgba(color, alpha * 0.18));
-      grad.addColorStop(1, rgba(color, 0));
+      const gradient = g.createRadialGradient(
+        0, 0, 0,
+        0, 0, radius
+      );
 
-      g.fillStyle = grad;
+      gradient.addColorStop(0, rgba(color, alpha));
+      gradient.addColorStop(
+        0.2,
+        rgba(color, alpha * 0.72)
+      );
+      gradient.addColorStop(
+        0.55,
+        rgba(color, alpha * 0.17)
+      );
+      gradient.addColorStop(1, rgba(color, 0));
+
+      g.fillStyle = gradient;
       g.beginPath();
       g.arc(0, 0, radius, 0, TAU);
       g.fill();
@@ -288,70 +570,161 @@
     }
 
     const mx = 330 + rnd() * 110;
-    const my = 330 + rnd() * 130;
+    const my = 310 + rnd() * 145;
+
     const angle = rnd() * TAU;
-    const length = 180 + rnd() * 180;
+    const length = 180 + rnd() * 185;
+    const shape = Math.floor(rnd() * 4);
 
     g.globalCompositeOperation = "screen";
 
-    for (let i = 0; i < 18; i++) {
+    // Diffuse distant gas.
+    for (
+      let i = 0;
+      i < Math.round(18 * layer.diffuse);
+      i++
+    ) {
       const t = rnd() * 2 - 1;
+
       drawCloud(
-        mx + Math.cos(angle) * length * t + (rnd() - 0.5) * 175,
-        my + Math.sin(angle) * length * t + (rnd() - 0.5) * 145,
-        60 + rnd() * 120,
-        35 + rnd() * 90,
+        mx + Math.cos(angle) * length * t +
+          (rnd() - 0.5) * 175 * layer.diffuse,
+
+        my + Math.sin(angle) * length * t +
+          (rnd() - 0.5) * 150 * layer.diffuse,
+
+        (65 + rnd() * 125) * layer.diffuse,
+        (35 + rnd() * 95) * layer.diffuse,
+
         colorize(choose(colors, rnd)),
-        0.02 + rnd() * 0.04
+        0.025 + rnd() * 0.04
       );
     }
 
-    const strands = 4 + Math.floor(rnd() * 4);
+    // Uneven luminous filaments.
+    const strands = Math.round(
+      (3 + rnd() * 4) * layer.detail
+    );
 
     for (let s = 0; s < strands; s++) {
       const phase = rnd() * TAU;
       const frequency = 1.2 + rnd() * 3;
-      const amplitude = 30 + rnd() * 68;
+      const amplitude = 25 + rnd() * 70;
+
       const tilt = angle + (rnd() - 0.5) * 1.2;
-      const thickness = 14 + rnd() * 34;
-      const offset = (rnd() - 0.5) * 120;
+      const thickness =
+        (17 + rnd() * 37) * layer.diffuse;
+
+      const offset = (rnd() - 0.5) * 130;
       const color = colorize(choose(colors, rnd));
-      const steps = 40;
+
+      const steps = Math.max(
+        2,
+        Math.round(45 * layer.detail)
+      );
 
       for (let i = 0; i < steps; i++) {
         const t = i / (steps - 1);
         const along = (t - 0.5) * 2 * length;
-        const wave = Math.sin(t * frequency * TAU + phase) * amplitude;
+
+        const wave = Math.sin(
+          t * frequency * TAU + phase
+        ) * amplitude;
+
         const across = offset + wave;
-        const x = mx + Math.cos(tilt) * along - Math.sin(tilt) * across;
-        const y = my + Math.sin(tilt) * along + Math.cos(tilt) * across;
-        const taper = Math.pow(Math.max(0, Math.sin(t * Math.PI)), 0.8);
+
+        let x =
+          mx + Math.cos(tilt) * along -
+          Math.sin(tilt) * across;
+
+        let y =
+          my + Math.sin(tilt) * along +
+          Math.cos(tilt) * across;
+
+        if (shape === 1) {
+          y += Math.sin(t * Math.PI) * 90;
+        }
+
+        if (shape === 2) {
+          x += Math.cos(t * TAU) * 65;
+        }
+
+        if (shape === 3) {
+          y += Math.sin(t * TAU * 2) * 40;
+        }
+
+        const taper = Math.pow(
+          Math.max(0, Math.sin(t * Math.PI)),
+          0.8
+        );
 
         drawCloud(
           x + (rnd() - 0.5) * 12,
           y + (rnd() - 0.5) * 12,
-          thickness * (0.7 + rnd()) * taper + 5,
-          thickness * (0.4 + rnd() * 0.7) * taper + 4,
+
+          thickness *
+            (0.7 + rnd()) * taper + 5,
+
+          thickness *
+            (0.4 + rnd() * 0.7) * taper + 4,
+
           color,
-          (0.02 + rnd() * 0.055) * taper
+          (0.025 + rnd() * 0.055) * taper
         );
       }
     }
 
-    for (let i = 0; i < 16; i++) {
+    // Bright knots.
+    for (
+      let i = 0;
+      i < Math.round(20 * layer.detail);
+      i++
+    ) {
+      const t = rnd() * 2 - 1;
+
       drawCloud(
-        mx + (rnd() - 0.5) * 190,
-        my + (rnd() - 0.5) * 170,
-        10 + rnd() * 34,
-        8 + rnd() * 28,
+        mx + Math.cos(angle) * length * t +
+          (rnd() - 0.5) * 125,
+
+        my + Math.sin(angle) * length * t +
+          (rnd() - 0.5) * 125,
+
+        10 + rnd() * 35,
+        8 + rnd() * 30,
+
         colorize(choose(colors, rnd)),
-        0.03 + rnd() * 0.08
+        0.035 + rnd() * 0.09
+      );
+    }
+
+    // Carved dark voids.
+    g.globalCompositeOperation = "destination-out";
+
+    for (
+      let i = 0;
+      i < 8 + layer.detail * 7;
+      i++
+    ) {
+      drawCloud(
+        mx + (rnd() - 0.5) * length * 1.6,
+        my + (rnd() - 0.5) * length * 1.6,
+
+        20 + rnd() * 65,
+        12 + rnd() * 48,
+
+        [0, 0, 0],
+        0.12 + rnd() * 0.2
       );
     }
 
     nebulaCache.set(key, sprite);
-    while (nebulaCache.size > C.rendering.nebulaCacheSize) {
-      nebulaCache.delete(nebulaCache.keys().next().value);
+
+    while (
+      nebulaCache.size > C.rendering.nebulaCacheSize
+    ) {
+      nebulaCache.delete(
+        nebulaCache.keys().next().value
+      );
     }
 
     return sprite;
@@ -359,77 +732,199 @@
 
   function drawNebulaLayer(index, time) {
     const layer = C.nebulae.layers[index];
+
     const scale = camera.zoom * layer.zoomFactor;
-    const drift = reducedMotion ? 0 : Math.sin(time * C.nebulae.driftSpeed + index * 1.7) * 12 * layer.drift;
+
+    const drift = reducedMotion
+      ? 0
+      : Math.sin(
+          time * C.nebulae.driftSpeed +
+          index * 1.7
+        ) * 12 * layer.drift;
 
     ctx.save();
     ctx.globalCompositeOperation = "screen";
 
-    for (const cell of visibleCells(layer.cellSize, layer.parallax, scale, 2)) {
-      const rnd = rngFor(cell.x, cell.y, 4000 + index * 100);
-      const probability = clamp(layer.density * scene.nebulaFrequency, 0, 1);
+    for (
+      const cell of visibleCells(
+        layer.cellSize,
+        layer.parallax,
+        scale,
+        2
+      )
+    ) {
+      const rnd = rngFor(
+        cell.x,
+        cell.y,
+        5000 + index * 179
+      );
+
+      const probability = clamp(
+        layer.density * scene.nebulaFrequency,
+        0,
+        1
+      );
+
       if (rnd() > probability) continue;
 
-      const wx = cell.x * layer.cellSize + (rnd() - 0.5) * layer.cellSize * 0.55;
-      const wy = cell.y * layer.cellSize + (rnd() - 0.5) * layer.cellSize * 0.55;
-      const size = lerp(layer.sizeMin, layer.sizeMax, rnd()) * scene.nebulaSize * scale;
+      const wx =
+        cell.x * layer.cellSize +
+        (rnd() - 0.5) * layer.cellSize * 0.55;
+
+      const wy =
+        cell.y * layer.cellSize +
+        (rnd() - 0.5) * layer.cellSize * 0.55;
+
+      const size = lerp(
+        layer.sizeMin,
+        layer.sizeMax,
+        rnd()
+      ) * scene.nebulaSize * scale;
+
       const rotation = rnd() * TAU;
       const opacity = 0.55 + rnd() * 0.45;
-      const p = project(wx, wy, layer.parallax, scale);
 
-      if (p.x + size < 0 || p.x - size > W || p.y + size < 0 || p.y - size > H) continue;
+      const p = project(
+        wx,
+        wy,
+        layer.parallax,
+        scale
+      );
 
-      const sprite = buildNebulaSprite(index, cell.x, cell.y);
+      if (
+        p.x + size < 0 ||
+        p.x - size > W ||
+        p.y + size < 0 ||
+        p.y - size > H
+      ) {
+        continue;
+      }
+
+      const sprite = buildNebulaSprite(
+        index,
+        cell.x,
+        cell.y
+      );
+
+      if (!sprite) continue;
 
       ctx.save();
-      ctx.globalAlpha = clamp(layer.opacity * scene.nebulaBrightness * opacity, 0, 1);
-      ctx.translate(p.x + drift, p.y - drift * 0.35);
+
+      ctx.globalAlpha = clamp(
+        layer.opacity *
+          scene.nebulaBrightness *
+          opacity,
+        0,
+        1
+      );
+
+      ctx.translate(
+        p.x + drift,
+        p.y - drift * 0.35
+      );
+
       ctx.rotate(rotation);
-      ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+
+      ctx.drawImage(
+        sprite,
+        -size / 2,
+        -size / 2,
+        size,
+        size
+      );
+
       ctx.restore();
     }
 
     ctx.restore();
   }
 
+  // ==========================================================
+  // BACKGROUND STAR FIELDS
+  // ==========================================================
+
   function starColor(hex) {
     const color = hexRgb(hex);
-    const average = (color[0] + color[1] + color[2]) / 3;
-    const changed = color.map(value =>
-      Math.round(clamp(average + (value - average) * scene.starsColorVariance, 0, 255))
-    );
-    return `rgb(${changed.join(",")})`;
+
+    const average =
+      (color[0] + color[1] + color[2]) / 3;
+
+    return "rgb(" + color.map(value =>
+      Math.round(clamp(
+        average +
+          (value - average) *
+          scene.starsColorVariance,
+        0,
+        255
+      ))
+    ).join(",") + ")";
   }
 
-  function drawStar(x, y, radius, color, alpha, glow) {
-    if (x < -30 || x > W + 30 || y < -30 || y > H + 30) return;
+  function drawStar(
+    x,
+    y,
+    radius,
+    color,
+    alpha,
+    glow
+  ) {
+    if (
+      x < -30 ||
+      x > W + 30 ||
+      y < -30 ||
+      y > H + 30
+    ) {
+      return;
+    }
 
     ctx.save();
 
     if (glow > 0) {
-      const halo = ctx.createRadialGradient(x, y, 0, x, y, radius * 10);
-      halo.addColorStop(0, `rgba(255,255,255,${alpha * 0.3})`);
-      halo.addColorStop(0.25, `rgba(140,190,255,${alpha * glow})`);
-      halo.addColorStop(1, "rgba(60,100,170,0)");
+      const halo = ctx.createRadialGradient(
+        x, y, 0,
+        x, y, radius * 10
+      );
+
+      halo.addColorStop(
+        0,
+        `rgba(255,255,255,${alpha * 0.3})`
+      );
+
+      halo.addColorStop(
+        0.25,
+        `rgba(140,190,255,${alpha * glow})`
+      );
+
+      halo.addColorStop(
+        1,
+        "rgba(60,100,170,0)"
+      );
 
       ctx.fillStyle = halo;
+
       circle(x, y, radius * 10);
       ctx.fill();
     }
 
     ctx.globalAlpha = clamp(alpha, 0, 1);
     ctx.fillStyle = color;
-    circle(x, y, Math.max(0.2, radius));
+
+    circle(x, y, Math.max(0.22, radius));
     ctx.fill();
 
     if (radius > 1.3) {
-      ctx.strokeStyle = "rgba(230,238,255,0.18)";
+      ctx.strokeStyle =
+        "rgba(225,240,255,0.13)";
+
       ctx.lineWidth = 0.5;
+
       ctx.beginPath();
       ctx.moveTo(x - radius * 5, y);
       ctx.lineTo(x + radius * 5, y);
+
       ctx.moveTo(x, y - radius * 5);
       ctx.lineTo(x, y + radius * 5);
+
       ctx.stroke();
     }
 
@@ -438,26 +933,69 @@
 
   function drawStarLayer(index, time) {
     const layers = [
-      { count: C.stars.distantCount, depth: 0.18, factor: 0.58, radius: 0.75 },
-      { count: C.stars.middleCount, depth: 0.48, factor: 0.82, radius: 1 },
-      { count: C.stars.nearCount, depth: 1, factor: 1, radius: 1.1 }
+      {
+        count: C.stars.distantCount,
+        depth: 0.18,
+        factor: 0.58,
+        radius: 0.75
+      },
+      {
+        count: C.stars.middleCount,
+        depth: 0.48,
+        factor: 0.82,
+        radius: 1
+      },
+      {
+        count: C.stars.nearCount,
+        depth: 1,
+        factor: 1,
+        radius: 1.14
+      }
     ];
 
     const layer = layers[index];
-    const scale = camera.zoom * layer.factor;
-    const count = Math.max(0, Math.round(layer.count * scene.starsAmount));
 
-    for (const cell of visibleCells(C.stars.cellSize, layer.depth, scale, 1)) {
-      const rnd = rngFor(cell.x, cell.y, 1300 + index);
+    const scale =
+      camera.zoom * layer.factor;
+
+    const count = Math.max(
+      0,
+      Math.round(
+        layer.count * scene.starsAmount
+      )
+    );
+
+    for (
+      const cell of visibleCells(
+        C.stars.cellSize,
+        layer.depth,
+        scale
+      )
+    ) {
+      const rnd = rngFor(
+        cell.x,
+        cell.y,
+        1300 + index
+      );
 
       for (let i = 0; i < count; i++) {
-        const x = cell.x * C.stars.cellSize + rnd() * C.stars.cellSize;
-        const y = cell.y * C.stars.cellSize + rnd() * C.stars.cellSize;
+        const x =
+          cell.x * C.stars.cellSize +
+          rnd() * C.stars.cellSize;
+
+        const y =
+          cell.y * C.stars.cellSize +
+          rnd() * C.stars.cellSize;
+
         const seed = rnd();
         const phase = rnd() * TAU;
         const speed = 0.7 + rnd() * 1.3;
         const brightness = rnd();
-        const color = choose(C.stars.colors, rnd);
+
+        const color = choose(
+          C.stars.colors,
+          rnd
+        );
 
         const radius =
           index === 0
@@ -468,41 +1006,93 @@
 
         const twinkle = reducedMotion
           ? 1
-          : 1 + Math.sin(time * C.stars.twinkleSpeed * speed + phase) * 0.13 * scene.starsTwinkle;
+          : 1 + Math.sin(
+              time *
+                C.stars.twinkleSpeed *
+                speed +
+                phase
+            ) * 0.13 * scene.starsTwinkle;
 
-        const alpha = (0.17 + Math.pow(brightness, 0.42) * 0.82) * scene.starsBrightness * twinkle;
-        const p = project(x, y, layer.depth, scale);
+        const alpha =
+          (0.17 +
+            Math.pow(brightness, 0.42) *
+              0.82) *
+          scene.starsBrightness *
+          twinkle;
+
+        const p = project(
+          x,
+          y,
+          layer.depth,
+          scale
+        );
 
         drawStar(
           p.x,
           p.y,
-          clamp(radius * Math.sqrt(scale) * layer.radius, 0.2, 4.3),
+
+          clamp(
+            radius *
+              Math.sqrt(scale) *
+              layer.radius,
+            0.2,
+            4.3
+          ),
+
           starColor(color),
           alpha,
-          seed > 0.91 ? 0.08 + rnd() * 0.16 : 0
+
+          seed > 0.91
+            ? 0.08 + rnd() * 0.16
+            : 0
         );
       }
     }
   }
-    function scheduleMeteor(now) {
+
+  // ==========================================================
+  // DISTANT SHOOTING STARS
+  // ==========================================================
+
+  function scheduleMeteor(now) {
     if (scene.shootingFrequency <= 0) {
       nextMeteor = Infinity;
       return;
     }
 
-    nextMeteor = now + lerp(C.shootingStars.minDelay, C.shootingStars.maxDelay, Math.random()) / scene.shootingFrequency;
+    nextMeteor = now + lerp(
+      C.shootingStars.minDelay,
+      C.shootingStars.maxDelay,
+      Math.random()
+    ) / scene.shootingFrequency;
   }
 
   function drawMeteors(now) {
-    if (reducedMotion || !C.shootingStars.enabled || scene.shootingFrequency <= 0) return;
-    if (!nextMeteor) scheduleMeteor(now);
+    if (
+      reducedMotion ||
+      !C.shootingStars.enabled ||
+      scene.shootingFrequency <= 0
+    ) {
+      return;
+    }
 
-    if (!shootingStar && now > nextMeteor) {
+    if (!nextMeteor) {
+      scheduleMeteor(now);
+    }
+
+    if (
+      !shootingStar &&
+      now > nextMeteor
+    ) {
       shootingStar = {
         born: now,
         x: Math.random() * W,
         y: Math.random() * H * 0.65,
-        angle: Math.PI * (0.12 + Math.random() * 0.18),
+
+        angle: Math.PI * (
+          0.12 + Math.random() * 0.18
+        ),
+
         distance: 120 + Math.random() * 200,
         duration: C.shootingStars.duration
       };
@@ -511,7 +1101,9 @@
     if (!shootingStar) return;
 
     const s = shootingStar;
-    const t = (now - s.born) / s.duration;
+
+    const t =
+      (now - s.born) / s.duration;
 
     if (t >= 1) {
       shootingStar = null;
@@ -520,27 +1112,204 @@
     }
 
     const progress = t * t * (3 - 2 * t);
-    const alpha = Math.sin(Math.PI * t) * 0.28;
+    const alpha =
+      Math.sin(Math.PI * t) * 0.32;
 
-    const hx = s.x + Math.cos(s.angle) * s.distance * progress;
-    const hy = s.y + Math.sin(s.angle) * s.distance * progress;
+    const hx =
+      s.x +
+      Math.cos(s.angle) *
+      s.distance *
+      progress;
+
+    const hy =
+      s.y +
+      Math.sin(s.angle) *
+      s.distance *
+      progress;
+
     const length = 55 + 75 * (1 - t);
-    const tx = hx - Math.cos(s.angle) * length;
-    const ty = hy - Math.sin(s.angle) * length;
+
+    const tx =
+      hx - Math.cos(s.angle) * length;
+
+    const ty =
+      hy - Math.sin(s.angle) * length;
 
     ctx.save();
     ctx.globalCompositeOperation = "screen";
-    const gradient = ctx.createLinearGradient(tx, ty, hx, hy);
-    gradient.addColorStop(0, "rgba(70,110,180,0)");
-    gradient.addColorStop(0.7, `rgba(135,180,255,${alpha * 0.28})`);
-    gradient.addColorStop(1, `rgba(245,250,255,${alpha})`);
+
+    const gradient = ctx.createLinearGradient(
+      tx,
+      ty,
+      hx,
+      hy
+    );
+
+    gradient.addColorStop(
+      0,
+      "rgba(70,110,180,0)"
+    );
+
+    gradient.addColorStop(
+      0.7,
+      `rgba(135,180,255,${alpha * 0.28})`
+    );
+
+    gradient.addColorStop(
+      1,
+      `rgba(245,250,255,${alpha})`
+    );
+
     ctx.strokeStyle = gradient;
     ctx.lineWidth = 0.9;
+
     ctx.beginPath();
     ctx.moveTo(tx, ty);
     ctx.lineTo(hx, hy);
     ctx.stroke();
+
     ctx.restore();
+  }
+
+  // ==========================================================
+  // AMBIENT SOUND
+  // ==========================================================
+
+  function startAmbientAudio() {
+    if (!C.ambientAudio.enabled) return;
+
+    if (audioCtx) {
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+      return;
+    }
+
+    try {
+      const AC =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (!AC) return;
+
+      audioCtx = new AC();
+
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value =
+        scene.ambientVolume;
+
+      masterGain.connect(
+        audioCtx.destination
+      );
+
+      const buffer = audioCtx.createBuffer(
+        1,
+        audioCtx.sampleRate * 2,
+        audioCtx.sampleRate
+      );
+
+      const samples =
+        buffer.getChannelData(0);
+
+      for (
+        let i = 0;
+        i < samples.length;
+        i++
+      ) {
+        samples[i] =
+          Math.random() * 2 - 1;
+      }
+
+      const noise =
+        audioCtx.createBufferSource();
+
+      noise.buffer = buffer;
+      noise.loop = true;
+
+      const low =
+        audioCtx.createBiquadFilter();
+
+      low.type = "lowpass";
+      low.frequency.value = 1600;
+
+      const high =
+        audioCtx.createBiquadFilter();
+
+      high.type = "highpass";
+      high.frequency.value = 60;
+
+      const noiseGain =
+        audioCtx.createGain();
+
+      noiseGain.gain.value = 0.95;
+
+      noise.connect(low);
+      low.connect(high);
+      high.connect(noiseGain);
+      noiseGain.connect(masterGain);
+
+      const hum =
+        audioCtx.createGain();
+
+      hum.gain.value = 0.06;
+      hum.connect(masterGain);
+
+      for (
+        const frequency of [52, 81]
+      ) {
+        const oscillator =
+          audioCtx.createOscillator();
+
+        oscillator.type = "sine";
+        oscillator.frequency.value =
+          frequency;
+
+        oscillator.connect(hum);
+        oscillator.start();
+      }
+
+      noise.start();
+
+      audioCtx.resume().catch(() => {});
+
+    } catch (error) {
+      console.warn(
+        "Ambient audio unavailable:",
+        error
+      );
+    }
+  }
+
+  function updateAudioVolume() {
+    if (!masterGain || !audioCtx) return;
+
+    masterGain.gain.setTargetAtTime(
+      scene.ambientVolume,
+      audioCtx.currentTime,
+      0.03
+    );
+  }
+
+  // ==========================================================
+  // NORMA CONSTELLATION RENDERING
+  // ==========================================================
+
+  function polylinePath(indices, positions) {
+    return indices.map((index, i) => {
+      const p = positions[index];
+
+      if (!p) {
+        return i === 0
+          ? "M 0 0"
+          : "L 0 0";
+      }
+
+      return (
+        (i === 0 ? "M" : "L") +
+        " " + p.x.toFixed(2) +
+        " " + p.y.toFixed(2)
+      );
+    }).join(" ");
   }
 
   function updateNavigationConstellation() {
@@ -550,340 +1319,1025 @@
       const button = navButtons[index];
       if (!button) return;
 
-      const p = project(star.x, star.y, 1.06, camera.zoom);
+      const p = project(
+        star.x,
+        star.y,
+        star.depth,
+        camera.zoom
+      );
+
       positions.push(p);
 
-      button.style.left = `${p.x}px`;
-      button.style.top = `${p.y}px`;
-      button.style.setProperty("--star-size", `${star.size}px`);
-      button.style.setProperty("--star-scale", "1");
-      button.style.setProperty("--star-tint", star.tint);
-      button.style.setProperty("--star-breathe", star.breathe);
+      const scale = clamp(
+        Math.pow(camera.zoom, 0.2),
+        0.88,
+        1.18
+      );
 
-      const visible = p.x > -80 && p.x < W + 80 && p.y > -80 && p.y < H + 80;
-      button.style.opacity = visible ? "1" : "0";
-      button.style.pointerEvents = visible ? "auto" : "none";
+      button.style.left = p.x + "px";
+      button.style.top = p.y + "px";
+
+      button.style.setProperty(
+        "--star-scale",
+        scale.toFixed(3)
+      );
+
+      button.style.setProperty(
+        "--star-size",
+        star.size + "px"
+      );
+
+      button.style.setProperty(
+        "--star-tint",
+        star.tint
+      );
+
+      button.style.setProperty(
+        "--star-breathe",
+        star.breathe
+      );
+
+      const visible =
+        p.x > -80 &&
+        p.x < W + 80 &&
+        p.y > -80 &&
+        p.y < H + 80;
+
+      button.style.opacity =
+        visible ? "1" : "0";
+
+      button.style.pointerEvents =
+        visible ? "auto" : "none";
     });
 
-    function polyline(indices) {
-      return indices.map((index, i) => {
-        const p = positions[index];
-        return `${i ? "L" : "M"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
-      }).join(" ");
-    }
+    const pathA = polylinePath(
+      NAV_LINES[0],
+      positions
+    );
 
-    const pathA = polyline(NAV_LINES[0]);
-    const pathB = polyline(NAV_LINES[1]);
+    const pathB = polylinePath(
+      NAV_LINES[1],
+      positions
+    );
 
-    DOM.lineABase.setAttribute("d", pathA);
-    DOM.lineBBase.setAttribute("d", pathB);
-    DOM.lineAGlow.setAttribute("d", pathA);
-    DOM.lineBGlow.setAttribute("d", pathB);
+    DOM.lineABase.setAttribute(
+      "d",
+      pathA
+    );
+
+    DOM.lineBBase.setAttribute(
+      "d",
+      pathB
+    );
+
+    DOM.lineAGlow.setAttribute(
+      "d",
+      pathA
+    );
+
+    DOM.lineBGlow.setAttribute(
+      "d",
+      pathB
+    );
   }
 
-  function starVisibility(type) {
+  // ==========================================================
+  // LIBRARY CONSTELLATION HIERARCHY
+  // ==========================================================
+
+  const SKY_DEPTH = {
+    group: 1,
+    production: 1,
+    season: 1
+  };
+
+  function archiveEntriesWithSky() {
+    const result = [];
+
+    for (
+      const type of [
+        "group",
+        "production",
+        "season"
+      ]
+    ) {
+      for (const item of STORE.all(type)) {
+        if (
+          item.constellation &&
+          item.constellation.center &&
+          Array.isArray(item.constellation.stars)
+        ) {
+          result.push({
+            type,
+            item
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  function constellationVisibility(type) {
     const zoom = camera.zoom;
+    const configuration =
+      AC.constellation;
 
-    if (type === "group") return 1;
-    if (type === "production") return 1;
-    if (type === "season") {
-      if (zoom < AC.constellation.seasonMinZoom) return 0;
-      return clamp((zoom - AC.constellation.seasonMinZoom) / 0.35, 0, 1);
+    const required =
+      type === "group"
+        ? configuration.groupMinZoom
+        : type === "production"
+          ? configuration.productionMinZoom
+          : configuration.seasonMinZoom;
+
+    if (zoom < required) {
+      return 0;
     }
-    return 1;
+
+    const revealWidth =
+      type === "season" ? 0.35 : 0.2;
+
+    return clamp(
+      (zoom - required) / revealWidth,
+      0,
+      1
+    );
   }
 
-  function createArchiveStarNode(type, item) {
-    const node = document.createElement("button");
-    node.type = "button";
-    node.className = "archive-star";
-    node.dataset.level = type;
-    node.dataset.id = item.id;
-    node.setAttribute("aria-label", `${item.title} — ${type}`);
+  function archiveStarWorldPosition(
+    constellation,
+    star
+  ) {
+    return {
+      x: constellation.center.x + star.x,
+      y: constellation.center.y + star.y
+    };
+  }
 
-    const halo = element("span", "star-halo");
-    const spikeX = element("span", "star-spike star-spike-x");
-    const spikeY = element("span", "star-spike star-spike-y");
-    const core = element("span", "star-core");
+  function archiveStarColor(star) {
+    if (!Array.isArray(star.tint)) {
+      return "205,225,255";
+    }
 
-    node.append(halo, spikeX, spikeY, core);
+    return star.tint.join(",");
+  }
 
-    const label = element("span", "star-label", item.title);
-    node.appendChild(label);
+  function createArchiveStarNode(type, item, star, index) {
+    const button = document.createElement("button");
 
-    node.addEventListener("click", event => {
+    button.type = "button";
+    button.className = "archive-star";
+
+    button.dataset.level = type;
+    button.dataset.id = item.id;
+    button.dataset.starIndex = index;
+
+    button.setAttribute(
+      "aria-label",
+      `${item.title} — ${type}`
+    );
+
+    const halo = element(
+      "span",
+      "star-halo"
+    );
+
+    const spikeX = element(
+      "span",
+      "star-spike star-spike-x"
+    );
+
+    const spikeY = element(
+      "span",
+      "star-spike star-spike-y"
+    );
+
+    const core = element(
+      "span",
+      "star-core"
+    );
+
+    button.append(
+      halo,
+      spikeX,
+      spikeY,
+      core
+    );
+
+    // A label is attached to the primary star only,
+    // avoiding 30 repeated titles in one constellation.
+    if (index === 0) {
+      const label = element(
+        "span",
+        "star-label",
+        item.title
+      );
+
+      button.appendChild(label);
+    }
+
+    button.style.setProperty(
+      "--star-size",
+      star.size + "px"
+    );
+
+    button.style.setProperty(
+      "--star-tint",
+      archiveStarColor(star)
+    );
+
+    const duration =
+      5 + ((star.twinklePhase || 0) / TAU) * 5;
+
+    button.style.setProperty(
+      "--star-breathe",
+      duration.toFixed(2) + "s"
+    );
+
+    button.addEventListener("click", event => {
       event.stopPropagation();
+      startAmbientAudio();
+
+      // Implemented in Part 2.
       openArchiveEntry(type, item.id);
     });
 
-    return node;
+    return button;
   }
 
-  function collectSkyEntries() {
-    return [
-      ...STORE.all("group").map(item => ({ type: "group", item })),
-      ...STORE.all("production").map(item => ({ type: "production", item })),
-      ...STORE.all("season").map(item => ({ type: "season", item }))
-    ].filter(entry => entry.item.constellation?.center && entry.item.constellation?.stars?.length);
-  }
-
-  function rebuildArchiveNodes() {
+  function rebuildArchiveSkyNodes() {
     DOM.archiveStars.replaceChildren();
-    archiveNodes.clear();
+    archiveSkyNodes.clear();
 
-    for (const { type, item } of collectSkyEntries()) {
-      const node = createArchiveStarNode(type, item);
-      archiveNodes.set(`${type}:${item.id}`, node);
-      DOM.archiveStars.appendChild(node);
+    const entries = archiveEntriesWithSky();
+
+    for (const { type, item } of entries) {
+      const constellation = item.constellation;
+
+      constellation.stars.forEach((star, index) => {
+        const key =
+          `${type}:${item.id}:${index}`;
+
+        const node = createArchiveStarNode(
+          type,
+          item,
+          star,
+          index
+        );
+
+        DOM.archiveStars.appendChild(node);
+
+        archiveSkyNodes.set(key, {
+          node,
+          type,
+          itemId: item.id,
+          starIndex: index
+        });
+      });
     }
 
-    archiveSignature = collectSkyEntries().map(({ type, item }) => `${type}:${item.id}:${item.title}`).join("|");
-    archiveDirty = true;
+    archiveStarSignature = entries.map(({ type, item }) =>
+      [
+        type,
+        item.id,
+        item.title,
+        item.constellation?.stars?.length || 0
+      ].join(":")
+    ).join("|");
+
+    archiveSkyDirty = true;
   }
 
-  function svgArchiveLine(a, b, type, animated = false, delay = 0) {
-    const path = svg("path", {
+  function svgArchiveLine(
+    a,
+    b,
+    type,
+    animated = false,
+    delay = 0
+  ) {
+    const path = svgElement("path", {
       d: `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} L ${b.x.toFixed(2)} ${b.y.toFixed(2)}`
     });
 
-    path.classList.add(animated ? "archive-connection-flow" : "archive-connection");
+    path.classList.add(
+      animated
+        ? "archive-connection-flow"
+        : "archive-connection"
+    );
 
     if (!animated) {
-      path.classList.add(type === "season" ? "season-link" : "group-link");
+      path.classList.add(
+        type === "group"
+          ? "group-link"
+          : type === "season"
+            ? "season-link"
+            : "production-link"
+      );
     } else {
-      path.style.animationDelay = `${-delay}s`;
+      path.style.animationDelay =
+        (-delay).toFixed(2) + "s";
     }
 
     return path;
   }
 
   function renderArchiveSky() {
-    const entries = collectSkyEntries();
-    const signature = entries.map(({ type, item }) => `${type}:${item.id}:${item.title}`).join("|");
-    if (signature !== archiveSignature) {
-      rebuildArchiveNodes();
+    const entries = archiveEntriesWithSky();
+
+    const signature = entries.map(({ type, item }) =>
+      [
+        type,
+        item.id,
+        item.title,
+        item.constellation?.stars?.length || 0
+      ].join(":")
+    ).join("|");
+
+    if (signature !== archiveStarSignature) {
+      rebuildArchiveSkyNodes();
     }
 
     DOM.archiveLines.replaceChildren();
-    const fragment = document.createDocumentFragment();
+
+    const lineFragment =
+      document.createDocumentFragment();
 
     for (const { type, item } of entries) {
-      const visibility = starVisibility(type);
-      const star = item.constellation.stars[0];
-      const p = project(item.constellation.center.x, item.constellation.center.y, 1, camera.zoom);
-      const node = archiveNodes.get(`${type}:${item.id}`);
-      if (!node) continue;
+      const constellation =
+        item.constellation;
 
-      const scale = clamp(Math.sqrt(camera.zoom), 0.7, 1.7);
+      const visibility =
+        constellationVisibility(type);
 
-      node.style.left = `${p.x}px`;
-      node.style.top = `${p.y}px`;
-      node.style.setProperty("--star-tint", (star.tint || [205, 225, 255]).join(","));
-      node.style.setProperty("--star-scale", scale.toFixed(3));
-      node.style.setProperty("--star-breathe", `${5 + ((star.twinklePhase || 0) / TAU) * 5}s`);
-      node.style.setProperty("--star-size", `${star.size}px`);
-      node.style.opacity = String(visibility * (star.brightness || 1));
-      node.style.pointerEvents = visibility > 0.24 ? "auto" : "none";
-      node.tabIndex = visibility > 0.24 ? 0 : -1;
+      const points = constellation.stars.map(star => {
+        const world = archiveStarWorldPosition(
+          constellation,
+          star
+        );
 
-      const visible = p.x >= -90 && p.x <= W + 90 && p.y >= -90 && p.y <= H + 90;
-      if (!visible) {
-        node.style.opacity = "0";
-        node.style.pointerEvents = "none";
-        node.tabIndex = -1;
+        return project(
+          world.x,
+          world.y,
+          SKY_DEPTH[type],
+          camera.zoom
+        );
+      });
+
+      const links =
+        Array.isArray(constellation.links)
+          ? constellation.links
+          : [];
+
+      if (visibility > 0) {
+        links.forEach(([a, b], index) => {
+          if (!points[a] || !points[b]) return;
+
+          const line = svgArchiveLine(
+            points[a],
+            points[b],
+            type
+          );
+
+          line.style.opacity =
+            (visibility * 0.8).toFixed(3);
+
+          lineFragment.appendChild(line);
+
+          // Occasional flowing light.
+          // Limited to avoid excessive DOM elements.
+          if (
+            index === 0 &&
+            type !== "season"
+          ) {
+            const flow = svgArchiveLine(
+              points[a],
+              points[b],
+              type,
+              true,
+              U.hashString(item.id) % 22
+            );
+
+            flow.style.opacity =
+              visibility.toFixed(3);
+
+            lineFragment.appendChild(flow);
+          }
+        });
       }
+
+      // ------------------------------------------
+      // ORGANIC PARENT-CHILD CONNECTIONS
+      // ------------------------------------------
 
       let parentItem = null;
-      if (type === "production" && item.groupId) parentItem = STORE.get("group", item.groupId);
-      if (type === "season" && item.productionId) parentItem = STORE.get("production", item.productionId);
 
-      if (parentItem?.constellation?.center && visibility > 0) {
-        const start = project(parentItem.constellation.center.x, parentItem.constellation.center.y, 1, camera.zoom);
-        const end = p;
+      if (type === "production" && item.groupId) {
+        parentItem = STORE.get("group", item.groupId);
+      }
 
-        const line = svgArchiveLine(start, end, type === "season" ? "season" : "group");
-        line.style.opacity = (visibility * (type === "season" ? 0.46 : 0.88)).toFixed(3);
-        fragment.appendChild(line);
+      if (type === "season" && item.productionId) {
+        parentItem = STORE.get(
+          "production",
+          item.productionId
+        );
+      }
 
+      if (
+        parentItem?.constellation?.center &&
+        visibility > 0
+      ) {
+        const parentCenter =
+          parentItem.constellation.center;
+
+        const childCenter =
+          constellation.center;
+
+        const start = project(
+          parentCenter.x,
+          parentCenter.y,
+          1,
+          camera.zoom
+        );
+
+        const end = project(
+          childCenter.x,
+          childCenter.y,
+          1,
+          camera.zoom
+        );
+
+        const connection = svgArchiveLine(
+          start,
+          end,
+          type === "season" ? "season" : "group"
+        );
+
+        connection.style.opacity =
+          (visibility * 0.85).toFixed(3);
+
+        lineFragment.appendChild(connection);
+
+        // A subtle traveling pulse appears along
+        // the connection occasionally.
         if (type === "production") {
-          const flow = svgArchiveLine(start, end, "group", true, U.hashString(item.id) % 23);
-          flow.style.opacity = (visibility * 0.72).toFixed(3);
-          fragment.appendChild(flow);
+          const pulse = svgArchiveLine(
+            start,
+            end,
+            "group",
+            true,
+            U.hashString(item.id) % 23
+          );
+
+          pulse.style.opacity =
+            (visibility * 0.7).toFixed(3);
+
+          lineFragment.appendChild(pulse);
         }
       }
+
+
+      constellation.stars.forEach((star, index) => {
+        const key = `${type}:${item.id}:${index}`;
+
+        const existing =
+          archiveSkyNodes.get(key);
+
+        if (!existing) return;
+
+        const button = existing.node;
+        const p = points[index];
+
+        const visible =
+          visibility > 0 &&
+          p.x >= -80 &&
+          p.x <= W + 80 &&
+          p.y >= -80 &&
+          p.y <= H + 80;
+
+        button.style.left = p.x + "px";
+        button.style.top = p.y + "px";
+
+        const zoomScale = clamp(
+          Math.sqrt(camera.zoom),
+          0.65,
+          1.8
+        );
+
+        button.style.setProperty(
+          "--star-scale",
+          zoomScale.toFixed(3)
+        );
+
+        button.style.opacity = visible
+          ? (visibility *
+              (star.brightness || 1)).toFixed(3)
+          : "0";
+
+        button.style.pointerEvents =
+          visible && visibility > 0.35
+            ? "auto"
+            : "none";
+
+        // Smaller season stars are intentionally
+        // absent until close-range zoom.
+        button.tabIndex =
+          visible && visibility > 0.35
+            ? 0
+            : -1;
+      });
     }
 
-    DOM.archiveLines.appendChild(fragment);
-    archiveDirty = false;
+    DOM.archiveLines.appendChild(
+      lineFragment
+    );
+
+    archiveSkyDirty = false;
   }
+
+  // ==========================================================
+  // GLASS PANEL FOUNDATION
+  // ==========================================================
 
   function setPanelOrigin(source) {
     if (!source) {
-      DOM.panel.style.setProperty("--origin-x", "50%");
-      DOM.panel.style.setProperty("--origin-y", "14%");
+      DOM.panel.style.setProperty(
+        "--origin-x",
+        "50%"
+      );
+
+      DOM.panel.style.setProperty(
+        "--origin-y",
+        "18%"
+      );
+
       return;
     }
 
-    const rect = source.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    DOM.panel.style.setProperty("--origin-x", `${clamp(cx / W * 100, 12, 88)}%`);
-    DOM.panel.style.setProperty("--origin-y", `${clamp(cy / H * 100, 8, 84)}%`);
+    const rect =
+      source.getBoundingClientRect();
+
+    const centerX =
+      rect.left + rect.width / 2;
+
+    const centerY =
+      rect.top + rect.height / 2;
+
+    DOM.panel.style.setProperty(
+      "--origin-x",
+      clamp(centerX / W * 100, 12, 88) + "%"
+    );
+
+    DOM.panel.style.setProperty(
+      "--origin-y",
+      clamp(centerY / H * 100, 8, 85) + "%"
+    );
   }
 
   function clearPanelRegions() {
     DOM.panelContent.replaceChildren();
     DOM.panelToolbar.replaceChildren();
     DOM.panelFooter.replaceChildren();
+
     DOM.panelToolbar.hidden = true;
     DOM.panelFooter.hidden = true;
+
     DOM.panelContent.scrollTop = 0;
   }
 
-  function showPanel({ key, title, eyebrow = "WATCH ARCHIVE", source = null, builder = null }) {
-    activePanel = { key, title, eyebrow, source, builder };
+  function showPanel({
+    key,
+    title,
+    eyebrow = "WATCH ARCHIVE",
+    wide = false,
+    source = null,
+    builder = null,
+    pushHistory = false
+  }) {
+    if (
+      pushHistory &&
+      activePanel
+    ) {
+      panelHistory.push(activePanel);
+    }
+
+    activePanel = {
+      key,
+      title,
+      eyebrow,
+      wide,
+      source,
+      builder
+    };
+
     setPanelOrigin(source);
     clearPanelRegions();
 
-    DOM.panelEyebrow.textContent = eyebrow;
     DOM.panelTitle.textContent = title;
+    DOM.panelEyebrow.textContent = eyebrow;
+
+    DOM.panel.classList.toggle(
+      "wide",
+      wide
+    );
 
     if (typeof builder === "function") {
       builder(DOM.panelContent);
     }
 
     DOM.panel.inert = false;
-    DOM.panel.setAttribute("aria-hidden", "false");
+
+    DOM.panel.setAttribute(
+      "aria-hidden",
+      "false"
+    );
+
     DOM.panel.classList.add("open");
 
     navButtons.forEach(button => {
-      button.classList.toggle("active", button.dataset.panel === key);
+      button.classList.toggle(
+        "active",
+        button.dataset.panel === key
+      );
     });
   }
 
   function closePanel() {
     DOM.panel.classList.remove("open");
-    DOM.panel.setAttribute("aria-hidden", "true");
+
+    DOM.panel.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+
     DOM.panel.inert = true;
+
     activePanel = null;
-    navButtons.forEach(button => button.classList.remove("active"));
+    panelHistory = [];
+
+    navButtons.forEach(button => {
+      button.classList.remove("active");
+    });
+  }
+
+  function backPanel() {
+    const previous = panelHistory.pop();
+
+    if (!previous) {
+      closePanel();
+      return;
+    }
+
+    showPanel({
+      ...previous,
+      pushHistory: false
+    });
   }
 
   function setToolbar(nodes = []) {
     DOM.panelToolbar.replaceChildren();
-    nodes.forEach(node => DOM.panelToolbar.appendChild(node));
-    DOM.panelToolbar.hidden = nodes.length === 0;
+
+    for (const node of nodes) {
+      DOM.panelToolbar.appendChild(node);
+    }
+
+    DOM.panelToolbar.hidden =
+      nodes.length === 0;
   }
 
   function setFooter(nodes = []) {
     DOM.panelFooter.replaceChildren();
-    nodes.forEach(node => DOM.panelFooter.appendChild(node));
-    DOM.panelFooter.hidden = nodes.length === 0;
+
+    for (const node of nodes) {
+      DOM.panelFooter.appendChild(node);
+    }
+
+    DOM.panelFooter.hidden =
+      nodes.length === 0;
   }
 
-  function makeButton(text, onClick, options = {}) {
-    const button = element("button", "archive-button" + (options.primary ? " primary" : "") + (options.small ? " small" : "") + (options.danger ? " danger" : ""), text);
+  function makeButton(
+    text,
+    onClick,
+    options = {}
+  ) {
+    const button = element(
+      "button",
+      "archive-button",
+      text
+    );
+
     button.type = "button";
-    if (options.disabled) button.disabled = true;
-    if (typeof onClick === "function") button.addEventListener("click", onClick);
+
+    if (options.primary) {
+      button.classList.add("primary");
+    }
+
+    if (options.danger) {
+      button.classList.add("danger");
+    }
+
+    if (options.small) {
+      button.classList.add("small");
+    }
+
+    if (options.disabled) {
+      button.disabled = true;
+    }
+
+    if (typeof onClick === "function") {
+      button.addEventListener(
+        "click",
+        onClick
+      );
+    }
+
     return button;
   }
 
-  function makeField({ label, value = "", type = "text", placeholder = "", required = false, min = null, max = null, step = null }) {
-    const wrapper = element("label", "archive-field");
-    const caption = element("span", "", label);
-    const input = element("input", "archive-input");
+  function makeHeading(text) {
+    return element(
+      "h3",
+      "section-title",
+      text
+    );
+  }
+
+  function makeDescription(text) {
+    return element(
+      "p",
+      "archive-description",
+      text
+    );
+  }
+
+  function makeField({
+    label,
+    value = "",
+    type = "text",
+    placeholder = "",
+    required = false,
+    min = null,
+    max = null,
+    step = null
+  }) {
+    const wrapper = element(
+      "label",
+      "archive-field"
+    );
+
+    const caption = element(
+      "span",
+      "",
+      label
+    );
+
+    const input = element(
+      "input",
+      "archive-input"
+    );
+
     input.type = type;
     input.value = value ?? "";
     input.placeholder = placeholder;
     input.required = required;
+
     if (min !== null) input.min = min;
     if (max !== null) input.max = max;
     if (step !== null) input.step = step;
+
     wrapper.append(caption, input);
-    return { wrapper, input };
+
+    return {
+      wrapper,
+      input
+    };
   }
 
-  function makeTextarea(label, value = "", placeholder = "") {
-    const wrapper = element("label", "archive-field");
-    const caption = element("span", "", label);
-    const textarea = element("textarea", "archive-textarea");
+  function makeSelect(
+    label,
+    options,
+    selectedValue = ""
+  ) {
+    const wrapper = element(
+      "label",
+      "archive-field"
+    );
+
+    const caption = element(
+      "span",
+      "",
+      label
+    );
+
+    const select = element(
+      "select",
+      "archive-select"
+    );
+
+    for (const option of options) {
+      const item = element("option");
+
+      if (typeof option === "string") {
+        item.value = option;
+        item.textContent = option;
+      } else {
+        item.value = option.value;
+        item.textContent = option.label;
+      }
+
+      select.appendChild(item);
+    }
+
+    select.value = selectedValue;
+
+    wrapper.append(caption, select);
+
+    return {
+      wrapper,
+      select
+    };
+  }
+
+  function makeTextarea(
+    label,
+    value = "",
+    placeholder = ""
+  ) {
+    const wrapper = element(
+      "label",
+      "archive-field"
+    );
+
+    const caption = element(
+      "span",
+      "",
+      label
+    );
+
+    const textarea = element(
+      "textarea",
+      "archive-textarea"
+    );
+
     textarea.value = value;
     textarea.placeholder = placeholder;
+    textarea.rows = 4;
+
     wrapper.append(caption, textarea);
-    return { wrapper, textarea };
-  }
 
-  function makeSelect(label, options, selected = "") {
-    const wrapper = element("label", "archive-field");
-    const caption = element("span", "", label);
-    const select = element("select", "archive-select");
-
-    options.forEach(option => {
-      const node = element("option");
-      if (typeof option === "string") {
-        node.value = option;
-        node.textContent = option;
-      } else {
-        node.value = option.value;
-        node.textContent = option.label;
-      }
-      select.appendChild(node);
-    });
-
-    select.value = selected;
-    wrapper.append(caption, select);
-    return { wrapper, select };
+    return {
+      wrapper,
+      textarea
+    };
   }
 
   function makeEmptyState(message) {
-    const box = element("div", "archive-empty");
-    box.appendChild(element("span", "empty-symbol", "✦"));
-    box.appendChild(element("p", "", message));
-    return box;
+    const container = element(
+      "div",
+      "archive-empty"
+    );
+
+    container.appendChild(
+      element(
+        "span",
+        "empty-symbol",
+        "✧"
+      )
+    );
+
+    container.appendChild(
+      element("p", "", message)
+    );
+
+    return container;
   }
 
-  function makeEntryRow({ title, metadata = [], rating = null, onOpen = null, onEdit = null }) {
-    const row = element("div", "archive-entry");
-    const content = element("div", "entry-content");
-    content.appendChild(element("h4", "entry-title", title));
+  function makeCheckbox(
+    label,
+    checked,
+    onChange
+  ) {
+    const wrapper = element(
+      "label",
+      "archive-check"
+    );
 
-    const meta = element("div", "entry-meta");
-    metadata.filter(Boolean).forEach(text => meta.appendChild(element("span", "", text)));
-    content.appendChild(meta);
-    row.appendChild(content);
+    const input = document.createElement(
+      "input"
+    );
 
-    if (rating !== null) {
-      row.appendChild(element("span", "entry-rating", `${formatRating(rating)} / 10`));
+    input.type = "checkbox";
+    input.checked = !!checked;
+
+    if (typeof onChange === "function") {
+      input.addEventListener(
+        "change",
+        () => onChange(input.checked)
+      );
     }
 
-    if (onOpen) row.appendChild(makeButton("Open", onOpen, { small: true }));
-    if (onEdit) row.appendChild(makeButton("Edit", onEdit, { small: true }));
+    wrapper.append(
+      input,
+      element("span", "", label)
+    );
+
+    return wrapper;
+  }
+
+  function makeEntryRow({
+    title,
+    metadata = [],
+    rating = null,
+    onOpen = null,
+    onEdit = null
+  }) {
+    const row = element(
+      "div",
+      "archive-entry"
+    );
+
+    const information = element(
+      "div",
+      "entry-content"
+    );
+
+    information.appendChild(
+      element(
+        "h4",
+        "entry-title",
+        title
+      )
+    );
+
+    const meta = element(
+      "div",
+      "entry-meta"
+    );
+
+    for (const text of metadata) {
+      if (!text) continue;
+      meta.appendChild(
+        element("span", "", text)
+      );
+    }
+
+    information.appendChild(meta);
+    row.appendChild(information);
+
+    if (rating !== null) {
+      row.appendChild(
+        element(
+          "span",
+          "entry-rating",
+          formatRating(rating)
+        )
+      );
+    }
+
+    if (onOpen) {
+      row.appendChild(
+        makeButton(
+          "Open",
+          onOpen,
+          { small: true }
+        )
+      );
+    }
+
+    if (onEdit) {
+      row.appendChild(
+        makeButton(
+          "Edit",
+          onEdit,
+          { small: true }
+        )
+      );
+    }
 
     return row;
   }
 
-  async function pickImage() {
-    return new Promise(resolve => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.addEventListener("change", () => {
-        const file = input.files?.[0];
-        if (!file) {
-          resolve(null);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(file);
-      });
-      input.click();
-    });
-  }
+  // ==========================================================
+  // END OF PART 1
+  //
+  // Do not close the outer function.
+  // Part 2 continues immediately below this line.
+  // ==========================================================
+
+ 
+  // ==========================================================
+  // WATCH ARCHIVE — STEP 7
+  // APP.JS — PART 2 OF 2
+  // Paste directly after Part 1.
+  // ==========================================================
+
+  // ==========================================================
+  // PANEL NAVIGATION
+  // ==========================================================
 
   function openMenu(name, source = null) {
+    startAmbientAudio();
+
     const titles = {
       settings: "Settings",
       library: "Library",
@@ -902,12 +2356,25 @@
 
     const title = titles[name];
     const builder = builders[name];
+
     if (!title || !builder) return;
+
+    if (
+      activePanel?.key === name &&
+      DOM.panel.classList.contains("open")
+    ) {
+      closePanel();
+      return;
+    }
+
+    panelHistory = [];
 
     showPanel({
       key: name,
       title,
       eyebrow: "WATCH ARCHIVE",
+      wide: name === "library" ||
+        name === "statistics",
       source,
       builder
     });
@@ -915,433 +2382,489 @@
 
   function refreshCurrentPanel() {
     if (!activePanel) return;
-    showPanel(activePanel);
-  }
-    function renderTenStars(rating) {
-    const wrap = element("div", "rating-stars");
-    const value = typeof rating === "number" ? rating : 0;
 
-    for (let i = 1; i <= 10; i++) {
-      const star = element("span", "rating-star", "★");
-      if (value >= i) {
-        star.classList.add("filled");
-      } else if (value >= i - 0.5) {
-        star.classList.add("half");
-      }
-      wrap.appendChild(star);
-    }
-
-    return wrap;
-  }
-
-  function updateArcScroller(scroller) {
-    const track = scroller.querySelector(".group-mini-track");
-    if (!track) return;
-    const cards = [...track.querySelectorAll(".group-mini-card")];
-    const viewportCenter = scroller.scrollLeft + scroller.clientWidth / 2;
-
-    cards.forEach(card => {
-      const center = card.offsetLeft + card.offsetWidth / 2;
-      const distance = (center - viewportCenter) / Math.max(1, scroller.clientWidth / 2);
-      const clamped = clamp(distance, -1.6, 1.6);
-      const curve = Math.pow(Math.abs(clamped), 1.8);
-      const translateY = curve * 46;
-      const rotate = clamped * 8;
-      const scale = 1 - Math.min(Math.abs(clamped) * 0.08, 0.08);
-      card.style.transform = `translateY(${translateY}px) rotate(${rotate}deg) scale(${scale})`;
-      card.style.opacity = `${1 - Math.min(Math.abs(clamped) * 0.18, 0.18)}`;
-    });
-  }
-
-  function buildGroupPanel(container, group) {
-    const rating = STORE.calculatedRating("group", group);
-    const productions = STORE.children("group", group.id);
-
-    const root = element("div", "group-view");
-    const hero = element("div", "group-hero");
-
-    if (group.bannerImage) {
-      const imageWrap = element("div", "group-banner-image");
-      const img = document.createElement("img");
-      img.src = group.bannerImage;
-      img.alt = `${group.title} banner`;
-      imageWrap.appendChild(img);
-      hero.appendChild(imageWrap);
-    } else {
-      hero.appendChild(element("div", "group-banner-fallback"));
-    }
-
-    const heroActions = element("div", "group-hero-actions");
-
-    const bannerButton = element("button", "icon-button", "⇪");
-    bannerButton.type = "button";
-    bannerButton.title = "Change banner";
-    bannerButton.addEventListener("click", async () => {
-      const image = await pickImage();
-      if (!image) return;
-      STORE.update("group", group.id, { bannerImage: image });
-      openArchiveEntry("group", group.id);
-      showToast("Banner updated.");
-    });
-
-    const editButton = element("button", "icon-button", "✎");
-    editButton.type = "button";
-    editButton.title = "Edit group";
-    editButton.addEventListener("click", () => openGroupEditor(group.id));
-
-    heroActions.append(bannerButton, editButton);
-    hero.appendChild(heroActions);
-
-    root.appendChild(hero);
-
-    const overview = element("div", "group-overview");
-
-    const left = element("div", "group-title-wrap");
-    left.appendChild(element("h3", "group-display-title", group.title));
-
-    const scoreWrap = element("div", "group-score-wrap");
-    scoreWrap.appendChild(renderTenStars(rating));
-    scoreWrap.appendChild(element("span", "group-score-number", `(${rating !== null ? formatRating(rating) : "—"})`));
-    left.appendChild(scoreWrap);
-
-    const right = element("div", "group-genre-block");
-    right.appendChild(element("div", "group-main-genres", (group.genres || []).join(" · ") || " "));
-    right.appendChild(element("div", "group-secondary-genres", (group.tags || []).join(" · ") || " "));
-
-    overview.append(left, right);
-    root.appendChild(overview);
-
-    const opinion = element("div", "group-opinion");
-    const opinionCopy = element("p", "group-opinion-copy" + (!group.notes ? " empty" : ""), group.notes || "Personal opinion...");
-    opinion.appendChild(opinionCopy);
-    root.appendChild(opinion);
-
-    const miniLibrary = element("div", "group-mini-library");
-    const miniShell = element("div", "group-mini-shell");
-    const miniScroller = element("div", "group-mini-scroller");
-    const miniTrack = element("div", "group-mini-track");
-
-    if (!productions.length) {
-      miniTrack.appendChild(element("div", "group-mini-empty", "No productions in this group yet."));
-    }
-
-    productions.forEach(production => {
-      const card = element("article", "group-mini-card");
-
-      const image = element("div", "group-mini-card-image");
-      if (production.shelfImage) {
-        const img = document.createElement("img");
-        img.src = production.shelfImage;
-        img.alt = `${production.title} library image`;
-        image.appendChild(img);
-      }
-
-      const body = element("div", "group-mini-card-body");
-      body.appendChild(element("h4", "group-mini-card-title", production.title));
-
-      const meta = [];
-      if (production.mediaType) meta.push(production.mediaType);
-      if (production.releaseDate) meta.push(production.releaseDate);
-      body.appendChild(element("div", "group-mini-card-meta", meta.join(" · ")));
-
-      const prating = STORE.calculatedRating("production", production);
-      body.appendChild(element("div", "group-mini-card-rating", prating !== null ? `${formatRating(prating)} / 10` : "Unrated"));
-
-      const tools = element("div", "group-mini-card-tools");
-
-      tools.appendChild(makeButton("Open", () => openArchiveEntry("production", production.id), { small: true }));
-
-      tools.appendChild(makeButton("Image", async () => {
-        const imageData = await pickImage();
-        if (!imageData) return;
-        STORE.update("production", production.id, { shelfImage: imageData });
-        openArchiveEntry("group", group.id);
-        showToast("Mini-library image updated.");
-      }, { small: true }));
-
-      body.appendChild(tools);
-      card.append(image, body);
-      miniTrack.appendChild(card);
-    });
-
-    miniScroller.appendChild(miniTrack);
-    miniShell.appendChild(miniScroller);
-    miniLibrary.appendChild(miniShell);
-    root.appendChild(miniLibrary);
-
-    container.appendChild(root);
-
-    requestAnimationFrame(() => updateArcScroller(miniScroller));
-    miniScroller.addEventListener("scroll", () => updateArcScroller(miniScroller));
-    window.addEventListener("resize", () => updateArcScroller(miniScroller), { once: true });
-
-    setFooter([
-      makeButton("+ Production", () => openCreationForm("production", { groupId: group.id })),
-      makeButton("Find in Universe", () => {
-        focusWorldPoint(group.constellation.center.x, group.constellation.center.y, 1);
-        closePanel();
-      }),
-      makeButton("Delete", () => {
-        if (!confirm(`Delete "${group.title}"? Productions will become standalone.`)) return;
-        STORE.delete("group", group.id);
-        archiveDirty = true;
-        showToast("Group deleted.");
-        openMenu("library");
-      }, { danger: true })
-    ]);
-  }
-
-  function openGroupEditor(id) {
-    const group = STORE.get("group", id);
-    if (!group) return;
+    const panelInfo = activePanel;
 
     showPanel({
-      key: `edit-group-${id}`,
-      title: group.title,
-      eyebrow: "GROUP",
-      builder(container) {
-        const wrap = element("div", "group-edit-sheet");
-
-        const title = makeField({ label: "Title", value: group.title, required: true });
-        const genres = makeField({ label: "Main Genres", value: (group.genres || []).join(", ") });
-        const tags = makeField({ label: "Secondary Genres", value: (group.tags || []).join(", ") });
-        const notes = makeTextarea("Personal Opinion", group.notes || "");
-        const grid = element("div", "inline-edit-grid two");
-
-        grid.append(title.wrapper, genres.wrapper);
-        wrap.appendChild(grid);
-
-        const grid2 = element("div", "inline-edit-grid");
-        grid2.append(tags.wrapper, notes.wrapper);
-        wrap.appendChild(grid2);
-
-        const actions = element("div", "archive-actions");
-        actions.appendChild(makeButton("Save", () => {
-          STORE.update("group", id, {
-            title: title.input.value.trim(),
-            genres: genres.input.value,
-            tags: tags.input.value,
-            notes: notes.textarea.value
-          });
-          showToast("Group updated.");
-          openArchiveEntry("group", id);
-        }, { primary: true }));
-
-        actions.appendChild(makeButton("Banner", async () => {
-          const image = await pickImage();
-          if (!image) return;
-          STORE.update("group", id, { bannerImage: image });
-          showToast("Banner updated.");
-          openArchiveEntry("group", id);
-        }));
-
-        wrap.appendChild(actions);
-        container.appendChild(wrap);
-      }
+      ...panelInfo,
+      pushHistory: false
     });
   }
 
-  function openArchiveEntry(type, id) {
-    const item = STORE.get(type, id);
-    if (!item) {
-      showToast("Entry not found.");
-      return;
+  function openSubPanel(config) {
+    if (activePanel) {
+      panelHistory.push(activePanel);
     }
 
-    const eyebrow = type.toUpperCase();
-
     showPanel({
-      key: `${type}-${id}`,
-      title: item.title,
-      eyebrow,
-      builder(container) {
-        setToolbar([makeButton("← Back", () => openMenu("library"), { small: true })]);
-
-        if (type === "group") {
-          buildGroupPanel(container, item);
-          return;
-        }
-
-        const rating = STORE.calculatedRating(type, item);
-        const section = element("div", "archive-section");
-        section.appendChild(makeEntryRow({
-          title: item.title,
-          metadata: [
-            item.mediaType || "",
-            item.releaseDate || "",
-            item.status || ""
-          ],
-          rating,
-          onEdit: () => openEntryEditor(type, id)
-        }));
-
-        if (item.notes) {
-          section.appendChild(element("p", "archive-description", item.notes));
-        }
-
-        container.appendChild(section);
-
-        if (type === "production") {
-          const seasons = STORE.children("production", item.id);
-          container.appendChild(element("h3", "section-title", "Seasons"));
-          const list = element("div", "archive-list");
-          if (!seasons.length) list.appendChild(makeEmptyState("No seasons yet."));
-          seasons.forEach(season => {
-            list.appendChild(makeEntryRow({
-              title: season.title,
-              metadata: [season.releaseDate || "", season.status || ""],
-              rating: STORE.calculatedRating("season", season),
-              onOpen: () => openArchiveEntry("season", season.id),
-              onEdit: () => openEntryEditor("season", season.id)
-            }));
-          });
-          container.appendChild(list);
-          setFooter([
-            makeButton("+ Season", () => openCreationForm("season", { productionId: item.id })),
-            makeButton("Edit", () => openEntryEditor("production", item.id)),
-            makeButton("Delete", () => {
-              if (!confirm(`Delete "${item.title}"? All seasons and episodes will also be deleted.`)) return;
-              STORE.delete("production", item.id);
-              archiveDirty = true;
-              showToast("Production deleted.");
-              openMenu("library");
-            }, { danger: true })
-          ]);
-          return;
-        }
-
-        if (type === "season") {
-          const episodes = STORE.children("season", item.id);
-          container.appendChild(element("h3", "section-title", "Episodes"));
-          const list = element("div", "archive-list");
-          if (!episodes.length) list.appendChild(makeEmptyState("No episodes yet."));
-          episodes.forEach(ep => {
-            list.appendChild(makeEntryRow({
-              title: ep.title,
-              metadata: [ep.number ? `#${ep.number}` : "", ep.durationMinutes ? formatDuration(ep.durationMinutes) : ""],
-              rating: STORE.calculatedRating("episode", ep),
-              onOpen: () => openArchiveEntry("episode", ep.id),
-              onEdit: () => openEntryEditor("episode", ep.id)
-            }));
-          });
-          container.appendChild(list);
-          setFooter([
-            makeButton("+ Episode", () => openCreationForm("episode", { seasonId: item.id })),
-            makeButton("Edit", () => openEntryEditor("season", item.id)),
-            makeButton("Delete", () => {
-              if (!confirm(`Delete "${item.title}"? All episodes will also be deleted.`)) return;
-              STORE.delete("season", item.id);
-              archiveDirty = true;
-              showToast("Season deleted.");
-              openMenu("library");
-            }, { danger: true })
-          ]);
-          return;
-        }
-
-        if (type === "episode") {
-          setFooter([
-            makeButton("Edit", () => openEntryEditor("episode", item.id)),
-            makeButton("Delete", () => {
-              if (!confirm(`Delete "${item.title}"?`)) return;
-              STORE.delete("episode", item.id);
-              showToast("Episode deleted.");
-              openMenu("library");
-            }, { danger: true })
-          ]);
-        }
-      }
+      ...config,
+      pushHistory: false
     });
+
+    if (panelHistory.length) {
+      setToolbar([
+        makeButton(
+          "← Back",
+          backPanel,
+          { small: true }
+        )
+      ]);
+    }
   }
 
-  function openEntryEditor(type, id) {
-    const item = STORE.get(type, id);
+  // ==========================================================
+  // SETTINGS PANEL
+  // ==========================================================
+
+  const SETTINGS_GROUPS = [
+    {
+      title: "Stars",
+      items: [
+        ["starsAmount", "Amount", 0.4, 2.2, 0.05],
+        ["starsBrightness", "Brightness", 0.3, 2, 0.05],
+        ["starsColorVariance", "Color Difference", 0, 1.5, 0.05],
+        ["starsTwinkle", "Ambient Twinkle", 0, 2, 0.05]
+      ]
+    },
+    {
+      title: "Shooting Stars",
+      items: [
+        ["shootingFrequency", "Frequency", 0, 2, 0.05]
+      ]
+    },
+    {
+      title: "Nebulae",
+      items: [
+        ["nebulaColorVariance", "Color Difference", 0.3, 2.2, 0.05],
+        ["nebulaBrightness", "Brightness", 0.25, 2.2, 0.05],
+        ["nebulaSize", "Size", 0.45, 2.1, 0.05],
+        ["nebulaFrequency", "Frequency", 0.2, 2, 0.05]
+      ]
+    },
+    {
+      title: "Ambient Sound",
+      items: [
+        ["ambientVolume", "Volume", 0, 0.2, 0.0025]
+      ]
+    }
+  ];
+
+  function buildSettingsPanel(container) {
+    for (const group of SETTINGS_GROUPS) {
+      const section = element(
+        "section",
+        "settings-group"
+      );
+
+      section.appendChild(
+        element("h3", "", group.title)
+      );
+
+      for (
+        const [key, label, min, max, step]
+        of group.items
+      ) {
+        const wrapper = element(
+          "label",
+          "setting"
+        );
+
+        const heading = element(
+          "div",
+          "setting-heading"
+        );
+
+        const output = element("output");
+
+        const decimals =
+          key === "ambientVolume" ? 3 : 2;
+
+        output.textContent =
+          Number(scene[key]).toFixed(decimals);
+
+        heading.append(
+          element("span", "", label),
+          output
+        );
+
+        const slider = element("input");
+
+        slider.type = "range";
+        slider.min = min;
+        slider.max = max;
+        slider.step = step;
+        slider.value = clamp(scene[key], min, max);
+
+        slider.setAttribute(
+          "aria-label",
+          label
+        );
+
+        slider.addEventListener("input", () => {
+          scene[key] = Number(slider.value);
+
+          output.textContent =
+            scene[key].toFixed(decimals);
+
+          if (key === "nebulaColorVariance") {
+            nebulaCache.clear();
+          }
+
+          if (key === "shootingFrequency") {
+            shootingStar = null;
+            nextMeteor = 0;
+          }
+
+          if (key === "ambientVolume") {
+            startAmbientAudio();
+            updateAudioVolume();
+          }
+
+          saveSpaceSettings();
+        });
+
+        wrapper.append(
+          heading,
+          slider
+        );
+
+        section.appendChild(wrapper);
+      }
+
+      container.appendChild(section);
+    }
+
+    container.appendChild(
+      element(
+        "p",
+        "settings-note",
+        "Your visual settings save automatically on this device."
+      )
+    );
+
+    const backupSection = element(
+      "section",
+      "settings-group"
+    );
+
+    backupSection.appendChild(
+      element("h3", "", "Archive Backup")
+    );
+
+    const actions = element(
+      "div",
+      "archive-actions"
+    );
+
+    actions.appendChild(
+      makeButton(
+        "Export Archive",
+        exportArchiveJSON
+      )
+    );
+
+    actions.appendChild(
+      makeButton(
+        "Import Archive",
+        requestArchiveImport
+      )
+    );
+
+    backupSection.appendChild(actions);
+
+    backupSection.appendChild(
+      element(
+        "p",
+        "settings-note",
+        "Export regularly to protect your personal archive. Import replaces the current library."
+      )
+    );
+
+    container.appendChild(backupSection);
+  }
+
+  // ==========================================================
+  // WATCHLIST
+  // ==========================================================
+
+  function buildWatchlistPanel(container) {
+    container.appendChild(
+      makeDescription(
+        "A personal list of productions you intend to watch. Checking an entry transfers it directly into your Library."
+      )
+    );
+
+    const addSection = element(
+      "section",
+      "archive-section"
+    );
+
+    addSection.appendChild(
+      makeHeading("Add to Watchlist")
+    );
+
+    const form = element("form");
+
+    const titleField = makeField({
+      label: "Title",
+      placeholder: "Enter a production title",
+      required: true
+    });
+
+    const mediaField = makeField({
+      label: "Form of Media (optional)",
+      placeholder: "Movie, series, documentary..."
+    });
+
+    const releaseField = makeField({
+      label: "Release / Airing (optional)",
+      placeholder: "YYYY, YYYY-MM-DD, or your own text"
+    });
+
+    form.append(
+      titleField.wrapper,
+      mediaField.wrapper,
+      releaseField.wrapper
+    );
+
+    const addButton = makeButton(
+      "Add to Watchlist",
+      null,
+      { primary: true }
+    );
+
+    addButton.type = "submit";
+    form.appendChild(addButton);
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+
+      const title = titleField.input.value.trim();
+
+      if (!title) return;
+
+      const result = STORE.addWatchlist({
+        title,
+        mediaType: mediaField.input.value,
+        releaseDate: releaseField.input.value
+      });
+
+      if (!result) {
+        showToast("Could not save this watchlist entry.");
+        return;
+      }
+
+      showToast("Added to Watchlist.");
+      refreshCurrentPanel();
+    });
+
+    addSection.appendChild(form);
+    container.appendChild(addSection);
+
+    container.appendChild(
+      makeHeading("Planned Productions")
+    );
+
+    const list = element(
+      "div",
+      "archive-list"
+    );
+
+    const items = STORE.all("watchlist")
+      .sort((a, b) =>
+        (b.createdAt || "").localeCompare(
+          a.createdAt || ""
+        )
+      );
+
+    if (!items.length) {
+      list.appendChild(
+        makeEmptyState(
+          "Your watchlist is empty. Add something you'd like to watch."
+        )
+      );
+    }
+
+    for (const item of items) {
+      const row = element(
+        "div",
+        "watchlist-item"
+      );
+
+      const check = element("input");
+      check.type = "checkbox";
+      check.checked = false;
+
+      check.setAttribute(
+        "aria-label",
+        `Move ${item.title} to Library`
+      );
+
+      const information = element(
+        "div",
+        "entry-content"
+      );
+
+      information.appendChild(
+        element(
+          "h4",
+          "entry-title",
+          item.title
+        )
+      );
+
+      const metadata = element(
+        "div",
+        "entry-meta"
+      );
+
+      if (item.mediaType) {
+        metadata.appendChild(
+          element("span", "", item.mediaType)
+        );
+      }
+
+      if (item.releaseDate) {
+        metadata.appendChild(
+          element("span", "", item.releaseDate)
+        );
+      }
+
+      information.appendChild(metadata);
+
+      const actions = element(
+        "div",
+        "archive-actions"
+      );
+
+      actions.appendChild(
+        makeButton(
+          "Edit",
+          () => openWatchlistEditor(item.id),
+          { small: true }
+        )
+      );
+
+      actions.appendChild(
+        makeButton(
+          "×",
+          () => {
+            if (!confirm(
+              `Remove "${item.title}" from your watchlist?`
+            )) return;
+
+            if (STORE.removeWatchlist(item.id)) {
+              refreshCurrentPanel();
+              showToast("Watchlist entry removed.");
+            }
+          },
+          { small: true, danger: true }
+        )
+      );
+
+      check.addEventListener("change", () => {
+        if (!check.checked) return;
+
+        check.disabled = true;
+        row.classList.add("completing");
+
+        const production =
+          STORE.completeWatchlist(item.id);
+
+        if (!production) {
+          check.disabled = false;
+          check.checked = false;
+          row.classList.remove("completing");
+
+          showToast(
+            "Transfer failed. Your watchlist entry was preserved."
+          );
+          return;
+        }
+
+        archiveSkyDirty = true;
+
+        showToast(
+          `"${production.title}" moved to Library.`
+        );
+
+        refreshCurrentPanel();
+      });
+
+      row.append(
+        check,
+        information,
+        actions
+      );
+
+      list.appendChild(row);
+    }
+
+    container.appendChild(list);
+  }
+
+  function openWatchlistEditor(id) {
+    const item = STORE.get("watchlist", id);
     if (!item) return;
 
-    showPanel({
-      key: `edit-${type}-${id}`,
-      title: `Edit ${item.title}`,
-      eyebrow: `EDIT ${type.toUpperCase()}`,
+    openSubPanel({
+      key: "watchlist-edit",
+      title: "Edit Watchlist Entry",
+      eyebrow: "WATCHLIST",
       builder(container) {
         const form = element("form");
 
-        const title = makeField({ label: "Title", value: item.title, required: true });
-        form.appendChild(title.wrapper);
+        const title = makeField({
+          label: "Title",
+          value: item.title,
+          required: true
+        });
 
-        let media = null;
-        let release = null;
-        let status = null;
-        let genres = null;
-        let tags = null;
-        let notes = null;
-        let duration = null;
-        let rating = null;
-        let number = null;
+        const media = makeField({
+          label: "Form of Media",
+          value: item.mediaType || ""
+        });
 
-        if (type === "production") {
-          media = makeField({ label: "Form of Media", value: item.mediaType || "" });
-          release = makeField({ label: "Release / Airing", value: item.releaseDate || "" });
-          status = makeSelect("Status", [
-            { value: "", label: "Not Set" },
-            { value: "Finished", label: "Finished" },
-            { value: "Watching", label: "Watching" },
-            { value: "Discontinued", label: "Discontinued" }
-          ], item.status || "");
-          genres = makeField({ label: "Main Genres", value: (item.genres || []).join(", ") });
-          tags = makeField({ label: "Secondary Genres", value: (item.tags || []).join(", ") });
-          notes = makeTextarea("Personal Opinion", item.notes || "");
-          duration = makeField({ label: "Duration (minutes)", type: "number", step: 1, min: 0, value: item.durationMinutes || 0 });
-          rating = makeField({ label: "Rating (1-10, .5 allowed)", type: "number", step: 0.5, min: 1, max: 10, value: item.rating ?? "" });
+        const release = makeField({
+          label: "Release / Airing",
+          value: item.releaseDate || ""
+        });
 
-          [media, release, status, genres, tags, duration, rating, notes].forEach(part => form.appendChild(part.wrapper));
-        }
+        form.append(
+          title.wrapper,
+          media.wrapper,
+          release.wrapper
+        );
 
-        if (type === "season") {
-          number = makeField({ label: "Season Number", type: "number", min: 0, step: 1, value: item.number ?? "" });
-          release = makeField({ label: "Time of Airing", value: item.releaseDate || "" });
-          status = makeSelect("Status", [
-            { value: "", label: "Not Set" },
-            { value: "Finished", label: "Finished" },
-            { value: "Watching", label: "Watching" },
-            { value: "Discontinued", label: "Discontinued" }
-          ], item.status || "");
-          notes = makeTextarea("Personal Opinion", item.notes || "");
-          [number, release, status, notes].forEach(part => form.appendChild(part.wrapper));
-        }
+        const save = makeButton(
+          "Save Changes",
+          null,
+          { primary: true }
+        );
 
-        if (type === "episode") {
-          number = makeField({ label: "Episode Number", type: "number", min: 0, step: 1, value: item.number ?? "" });
-          duration = makeField({ label: "Duration (minutes)", type: "number", min: 0, step: 1, value: item.durationMinutes || 0 });
-          rating = makeField({ label: "Rating (1-10, .5 allowed)", type: "number", min: 1, max: 10, step: 0.5, value: item.rating ?? "" });
-          notes = makeTextarea("Personal Opinion", item.notes || "");
-          [number, duration, rating, notes].forEach(part => form.appendChild(part.wrapper));
-        }
-
-        const actions = element("div", "archive-actions");
-        const save = makeButton("Save Changes", null, { primary: true });
         save.type = "submit";
-        actions.appendChild(save);
-        form.appendChild(actions);
+        form.appendChild(save);
 
         form.addEventListener("submit", event => {
           event.preventDefault();
 
-          const changes = { title: title.input.value.trim() };
+          const result = STORE.update(
+            "watchlist",
+            id,
+            {
+              title: title.input.value,
+              mediaType: media.input.value,
+              releaseDate: release.input.value
+            }
+          );
 
-          if (media) changes.mediaType = media.input.value;
-          if (release) changes.releaseDate = release.input.value;
-          if (status) changes.status = status.select.value;
-          if (genres) changes.genres = genres.input.value;
-          if (tags) changes.tags = tags.input.value;
-          if (notes) changes.notes = notes.textarea.value;
-          if (duration) changes.durationMinutes = duration.input.value;
-          if (rating) changes.rating = rating.input.value;
-          if (number) changes.number = number.input.value;
+          if (!result) {
+            showToast("Could not save changes.");
+            return;
+          }
 
-          STORE.update(type, id, changes);
-          archiveDirty = true;
-          showToast("Entry updated.");
-          openArchiveEntry(type, id);
+          showToast("Watchlist entry updated.");
+          backPanel();
         });
 
         container.appendChild(form);
@@ -1349,218 +2872,421 @@
     });
   }
 
-  function buildWatchlistPanel(container) {
-    const intro = element("p", "archive-description", "A personal watchlist. Ticking an entry moves it into the Library as a Production.");
-    container.appendChild(intro);
+  // ==========================================================
+  // CREATION MENU
+  // ==========================================================
 
-    const form = element("form");
-    const title = makeField({ label: "Title", placeholder: "Enter a title", required: true });
-    const media = makeField({ label: "Form of Media", placeholder: "Movie, Series..." });
-    const release = makeField({ label: "Release / Airing", placeholder: "Optional" });
-
-    form.append(title.wrapper, media.wrapper, release.wrapper);
-    const add = makeButton("Add to Watchlist", null, { primary: true });
-    add.type = "submit";
-    form.appendChild(add);
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      STORE.addWatchlist({
-        title: title.input.value,
-        mediaType: media.input.value,
-        releaseDate: release.input.value
-      });
-      showToast("Added to Watchlist.");
-      refreshCurrentPanel();
-    });
-
-    container.appendChild(form);
-    container.appendChild(element("div", "archive-divider"));
-
-    const list = element("div", "archive-list");
-    const items = STORE.all("watchlist").sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-
-    if (!items.length) list.appendChild(makeEmptyState("Your watchlist is empty."));
-
-    items.forEach(item => {
-      const row = element("div", "watchlist-item");
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.addEventListener("change", () => {
-        if (!check.checked) return;
-        STORE.completeWatchlist(item.id);
-        archiveDirty = true;
-        showToast(`"${item.title}" moved to Library.`);
-        refreshCurrentPanel();
-      });
-
-      const content = element("div", "entry-content");
-      content.appendChild(element("h4", "entry-title", item.title));
-      content.appendChild(element("div", "entry-meta", [item.mediaType, item.releaseDate].filter(Boolean).join(" · ")));
-
-      row.append(check, content, makeButton("×", () => {
-        STORE.removeWatchlist(item.id);
-        showToast("Watchlist entry removed.");
-        refreshCurrentPanel();
-      }, { small: true, danger: true }));
-
-      list.appendChild(row);
-    });
-
-    container.appendChild(list);
-  }
+  const CREATION_TYPES = [
+    {
+      type: "group",
+      title: "Group",
+      symbol: "✦",
+      description: "A universe containing multiple productions"
+    },
+    {
+      type: "production",
+      title: "Production",
+      symbol: "✧",
+      description: "A movie, series, or other production"
+    },
+    {
+      type: "season",
+      title: "Season",
+      symbol: "⋆",
+      description: "A season within an existing production"
+    },
+    {
+      type: "episode",
+      title: "Episode",
+      symbol: "·",
+      description: "An individual episode within a season"
+    }
+  ];
 
   function buildCreationPanel(container) {
-    const intro = element("p", "archive-description", "Create a Group, Production, Season, or Episode. Constellations grow automatically from the hierarchy.");
-    container.appendChild(intro);
+    container.appendChild(
+      makeDescription(
+        "Create an entry manually. Groups and productions generate unique constellations, while seasons appear as smaller stars when you zoom closer."
+      )
+    );
 
-    const grid = element("div", "creation-options");
-    [
-      ["group", "✦", "Group"],
-      ["production", "✧", "Production"],
-      ["season", "⋆", "Season"],
-      ["episode", "·", "Episode"]
-    ].forEach(([type, symbol, label]) => {
-      const button = element("button", "creation-option");
+    const grid = element(
+      "div",
+      "creation-options"
+    );
+
+    for (const entry of CREATION_TYPES) {
+      const button = element(
+        "button",
+        "creation-option"
+      );
+
       button.type = "button";
-      button.appendChild(element("span", "creation-symbol", symbol));
-      button.appendChild(element("strong", "", label));
-      button.appendChild(element("small", "", `Create a ${label.toLowerCase()}.`));
-      button.addEventListener("click", () => openCreationForm(type));
+
+      button.appendChild(
+        element(
+          "span",
+          "creation-symbol",
+          entry.symbol
+        )
+      );
+
+      button.appendChild(
+        element(
+          "strong",
+          "",
+          entry.title
+        )
+      );
+
+      button.appendChild(
+        element(
+          "small",
+          "",
+          entry.description
+        )
+      );
+
+      button.addEventListener("click", () => {
+        openCreationForm(entry.type);
+      });
+
       grid.appendChild(button);
-    });
+    }
 
     container.appendChild(grid);
+
+    container.appendChild(
+      element(
+        "p",
+        "archive-hint",
+        "These are functional starter forms. Their full custom designs will be developed separately."
+      )
+    );
+  }
+
+  function createParentSelector(type, label, items) {
+    const options = [
+      {
+        value: "",
+        label: `Select ${label.toLowerCase()}`
+      },
+      ...items.map(item => ({
+        value: item.id,
+        label: item.title
+      }))
+    ];
+
+    return makeSelect(
+      label,
+      options,
+      ""
+    );
+  }
+
+  function createConstellationControls(
+    initialValue = AC.constellation.defaultStars
+  ) {
+    const section = element(
+      "section",
+      "archive-section"
+    );
+
+    section.appendChild(
+      makeHeading("Constellation")
+    );
+
+    section.appendChild(
+      makeDescription(
+        "Choose how many individual stars will form this entry's unique constellation."
+      )
+    );
+
+    const wrapper = element(
+      "div",
+      "constellation-count"
+    );
+
+    const slider = element("input");
+
+    slider.type = "range";
+    slider.min = AC.constellation.minStars;
+    slider.max = AC.constellation.maxStars;
+    slider.step = 1;
+    slider.value = clamp(
+      initialValue,
+      AC.constellation.minStars,
+      AC.constellation.maxStars
+    );
+
+    const output = element(
+      "output",
+      "",
+      slider.value
+    );
+
+    wrapper.append(
+      slider,
+      output
+    );
+
+    section.appendChild(wrapper);
+
+    const hint = element(
+      "p",
+      "archive-hint",
+      "The constellation's shape, spacing and colors will be generated when the entry is saved."
+    );
+
+    section.appendChild(hint);
+
+    slider.addEventListener("input", () => {
+      output.textContent = slider.value;
+    });
+
+    return {
+      section,
+      slider
+    };
   }
 
   function openCreationForm(type, defaults = {}) {
-    const label = type.charAt(0).toUpperCase() + type.slice(1);
+    const title =
+      type.charAt(0).toUpperCase() +
+      type.slice(1);
 
-    showPanel({
+    openSubPanel({
       key: `create-${type}`,
-      title: `Create ${label}`,
+      title: `Create ${title}`,
       eyebrow: "CREATION",
+      wide: true,
       builder(container) {
         const form = element("form");
-        const title = makeField({ label: "Title", required: true, value: defaults.title || "" });
-        form.appendChild(title.wrapper);
 
-        let group = null;
-        let production = null;
-        let season = null;
+        const name = makeField({
+          label: "Title",
+          value: defaults.title || "",
+          placeholder: `Enter ${type} title`,
+          required: true
+        });
+
+        form.appendChild(name.wrapper);
+
+        let parent = null;
         let media = null;
         let release = null;
-        let status = null;
-        let number = null;
         let duration = null;
         let rating = null;
-        let genres = null;
-        let tags = null;
         let notes = null;
-
-        if (type === "group") {
-          genres = makeField({ label: "Main Genres" });
-          tags = makeField({ label: "Secondary Genres" });
-          notes = makeTextarea("Personal Opinion");
-          [genres, tags, notes].forEach(part => form.appendChild(part.wrapper));
-        }
+        let number = null;
 
         if (type === "production") {
-          group = makeSelect("Parent Group", [{ value: "", label: "Standalone" }, ...STORE.all("group").map(g => ({ value: g.id, label: g.title }))], defaults.groupId || "");
-          media = makeField({ label: "Form of Media" });
-          release = makeField({ label: "Release / Airing" });
-          status = makeSelect("Status", [
-            { value: "", label: "Not Set" },
-            { value: "Finished", label: "Finished" },
-            { value: "Watching", label: "Watching" },
-            { value: "Discontinued", label: "Discontinued" }
-          ]);
-          genres = makeField({ label: "Main Genres" });
-          tags = makeField({ label: "Secondary Genres" });
-          notes = makeTextarea("Personal Opinion");
-          [group, media, release, status, genres, tags, notes].forEach(part => form.appendChild(part.wrapper));
+          const groupOptions = [
+            {
+              value: "",
+              label: "Standalone / No Group"
+            },
+            ...STORE.all("group").map(group => ({
+              value: group.id,
+              label: group.title
+            }))
+          ];
+
+          parent = makeSelect(
+            "Parent Group (optional)",
+            groupOptions,
+            defaults.groupId || ""
+          );
+
+          media = makeField({
+            label: "Form of Media",
+            placeholder: "Enter manually",
+            value: defaults.mediaType || ""
+          });
+
+          release = makeField({
+            label: "Release / Airing",
+            value: defaults.releaseDate || ""
+          });
+
+          form.append(
+            parent.wrapper,
+            media.wrapper,
+            release.wrapper
+          );
         }
 
         if (type === "season") {
-          production = makeSelect("Parent Production", STORE.all("production").map(p => ({ value: p.id, label: p.title })), defaults.productionId || "");
-          number = makeField({ label: "Season Number", type: "number", min: 0, step: 1 });
-          release = makeField({ label: "Time of Airing" });
-          status = makeSelect("Status", [
-            { value: "", label: "Not Set" },
-            { value: "Finished", label: "Finished" },
-            { value: "Watching", label: "Watching" },
-            { value: "Discontinued", label: "Discontinued" }
-          ]);
-          [production, number, release, status].forEach(part => form.appendChild(part.wrapper));
+          parent = createParentSelector(
+            type,
+            "Production",
+            STORE.all("production")
+          );
+
+          if (defaults.productionId) {
+            parent.select.value =
+              defaults.productionId;
+          }
+
+          number = makeField({
+            label: "Season Number",
+            type: "number",
+            min: 0,
+            step: 1
+          });
+
+          release = makeField({
+            label: "Time of Airing",
+            placeholder: "Enter manually"
+          });
+
+          form.append(
+            parent.wrapper,
+            number.wrapper,
+            release.wrapper
+          );
         }
 
         if (type === "episode") {
-          season = makeSelect("Parent Season", STORE.all("season").map(s => ({ value: s.id, label: s.title })), defaults.seasonId || "");
-          number = makeField({ label: "Episode Number", type: "number", min: 0, step: 1 });
-          duration = makeField({ label: "Duration (minutes)", type: "number", min: 0, step: 1 });
-          rating = makeField({ label: "Rating (1-10, .5 allowed)", type: "number", min: 1, max: 10, step: 0.5 });
-          notes = makeTextarea("Personal Opinion");
-          [season, number, duration, rating, notes].forEach(part => form.appendChild(part.wrapper));
+          parent = createParentSelector(
+            type,
+            "Season",
+            STORE.all("season")
+          );
+
+          if (defaults.seasonId) {
+            parent.select.value =
+              defaults.seasonId;
+          }
+
+          number = makeField({
+            label: "Episode Number",
+            type: "number",
+            min: 0,
+            step: 1
+          });
+
+          duration = makeField({
+            label: "Duration (minutes)",
+            type: "number",
+            min: 0,
+            step: 1
+          });
+
+          rating = makeField({
+            label: "Rating (1–10, half-stars)",
+            type: "number",
+            min: 1,
+            max: 10,
+            step: 0.5
+          });
+
+          form.append(
+            parent.wrapper,
+            number.wrapper,
+            duration.wrapper,
+            rating.wrapper
+          );
         }
 
-        const save = makeButton(`Create ${label}`, null, { primary: true });
-        save.type = "submit";
-        form.appendChild(save);
+        if (type === "group" ||
+            type === "production" ||
+            type === "episode") {
+          notes = makeTextarea(
+            "Personal Thoughts / Observations",
+            "",
+            "Your own observations..."
+          );
+
+          form.appendChild(notes.wrapper);
+        }
+      
+        const action = makeButton(
+          `Create ${title}`,
+          null,
+          { primary: true }
+        );
+
+        action.type = "submit";
+        form.appendChild(action);
 
         form.addEventListener("submit", event => {
           event.preventDefault();
 
+                  const input = {
+            title: name.input.value
+          };
+          
+          if (parent) {
+            if (type === "production") {
+              input.groupId =
+                parent.select.value || null;
+            }
+
+            if (type === "season") {
+              input.productionId =
+                parent.select.value;
+            }
+
+            if (type === "episode") {
+              input.seasonId =
+                parent.select.value;
+            }
+          }
+
+          if (media) {
+            input.mediaType = media.input.value;
+          }
+
+          if (release) {
+            input.releaseDate =
+              release.input.value;
+          }
+
+          if (number) {
+            input.number = number.input.value === ""
+              ? null
+              : Number(number.input.value);
+          }
+
+          if (duration) {
+            input.durationMinutes =
+              Number(duration.input.value || 0);
+          }
+
+          if (rating) {
+            input.rating = rating.input.value;
+          }
+
+          if (notes) {
+            input.notes = notes.textarea.value;
+          }
+
           let created = null;
 
           if (type === "group") {
-            created = STORE.createGroup({
-              title: title.input.value,
-              genres: genres.input.value,
-              tags: tags.input.value,
-              notes: notes.textarea.value
-            });
-          }
-
-          if (type === "production") {
-            created = STORE.createProduction({
-              title: title.input.value,
-              groupId: group.select.value || null,
-              mediaType: media.input.value,
-              releaseDate: release.input.value,
-              status: status.select.value,
-              genres: genres.input.value,
-              tags: tags.input.value,
-              notes: notes.textarea.value
-            });
-          }
-
-          if (type === "season") {
-            created = STORE.createSeason({
-              title: title.input.value,
-              productionId: production.select.value,
-              number: number.input.value,
-              releaseDate: release.input.value,
-              status: status.select.value
-            });
-          }
-
-          if (type === "episode") {
-            created = STORE.createEpisode({
-              title: title.input.value,
-              seasonId: season.select.value,
-              number: number.input.value,
-              durationMinutes: duration.input.value,
-              rating: rating.input.value,
-              notes: notes.textarea.value
-            });
+            created = STORE.createGroup(input);
+          } else if (type === "production") {
+            created = STORE.createProduction(input);
+          } else if (type === "season") {
+            created = STORE.createSeason(input);
+          } else if (type === "episode") {
+            created = STORE.createEpisode(input);
           }
 
           if (!created) {
-            showToast("Creation failed. Check the parent selection and title.");
+            showToast(
+              "Creation failed. Check the title and parent selection."
+            );
             return;
           }
 
-          archiveDirty = true;
-          showToast(`${label} created.`);
+          archiveSkyDirty = true;
+
+          showToast(
+            `${title} created successfully.`
+          );
+
           openArchiveEntry(type, created.id);
         });
 
@@ -1569,289 +3295,2192 @@
     });
   }
 
+  // ==========================================================
+  // LIBRARY
+  // ==========================================================
+
   function buildLibraryPanel(container) {
-    const prefs = STORE.data.preferences;
-    const sorting = makeSelect("Sort by", AC.sorting.map(item => ({ value: item.id, label: item.label })), prefs.librarySort);
-    sorting.select.addEventListener("change", () => {
-      STORE.setLibraryPreferences({ sort: sorting.select.value });
-      refreshCurrentPanel();
-    });
+    const preferences =
+      STORE.data.preferences;
+
+    const sorting = makeSelect(
+      "Sort by",
+      AC.sorting.map(option => ({
+        value: option.id,
+        label: option.label
+      })),
+      preferences.librarySort
+    );
+
+    sorting.select.addEventListener(
+      "change",
+      () => {
+        STORE.setLibraryPreferences({
+          sort: sorting.select.value
+        });
+
+        refreshCurrentPanel();
+      }
+    );
+
     container.appendChild(sorting.wrapper);
 
-    const filters = element("div", "archive-toolbar-row");
-    [["group", "Groups"], ["production", "Productions"], ["season", "Seasons"], ["episode", "Episodes"]].forEach(([type, label]) => {
-      const wrapper = element("label", "archive-check");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = !!prefs.libraryVisibility[type];
-      input.addEventListener("change", () => {
-        STORE.setLibraryPreferences({ visibility: { [type]: input.checked } });
-        refreshCurrentPanel();
-      });
-      wrapper.append(input, element("span", "", label));
-      filters.appendChild(wrapper);
-    });
+    const filters = element(
+      "div",
+      "archive-toolbar-row"
+    );
+
+    const visibility =
+      preferences.libraryVisibility;
+
+    for (const [type, label] of [
+      ["group", "Groups"],
+      ["production", "Productions"],
+      ["season", "Seasons"],
+      ["episode", "Episodes"]
+    ]) {
+      filters.appendChild(
+        makeCheckbox(
+          label,
+          visibility[type],
+          checked => {
+            STORE.setLibraryPreferences({
+              visibility: {
+                [type]: checked
+              }
+            });
+
+            refreshCurrentPanel();
+          }
+        )
+      );
+    }
+
     container.appendChild(filters);
-    container.appendChild(element("div", "archive-divider"));
 
-    const list = element("div", "archive-list");
-    const entries = STORE.libraryEntries();
+    container.appendChild(
+      element("div", "archive-divider")
+    );
 
-    if (!entries.length) list.appendChild(makeEmptyState("No entries match your current filters."));
+    const entries =
+      STORE.libraryEntries();
 
-    entries.forEach(record => {
-      list.appendChild(makeEntryRow({
-        title: record.item.title,
-        metadata: [
-          record.type,
-          record.item.mediaType || "",
-          record.item.releaseDate || ""
-        ],
-        rating: record.rating,
-        onOpen: () => openArchiveEntry(record.type, record.item.id),
-        onEdit: () => openEntryEditor(record.type, record.item.id)
-      }));
-    });
+    container.appendChild(
+      makeHeading(
+        `Library — ${entries.length} entries`
+      )
+    );
+
+    const list = element(
+      "div",
+      "archive-list"
+    );
+
+    if (!entries.length) {
+      list.appendChild(
+        makeEmptyState(
+          "No entries match your current library filters."
+        )
+      );
+    }
+
+    for (const record of entries) {
+      const { type, item, rating } =
+        record;
+
+      const metadata = [
+        type.charAt(0).toUpperCase() +
+          type.slice(1)
+      ];
+
+      if (item.mediaType) {
+        metadata.push(item.mediaType);
+      }
+
+      if (item.releaseDate) {
+        metadata.push(item.releaseDate);
+      }
+
+      list.appendChild(
+        makeEntryRow({
+          title: item.title,
+          metadata,
+          rating,
+
+          onOpen: () =>
+            openArchiveEntry(type, item.id),
+
+          onEdit: () =>
+            openEntryEditor(type, item.id)
+        })
+      );
+    }
 
     container.appendChild(list);
   }
 
-  function buildSettingsPanel(container) {
-    const groups = [
-      {
-        title: "Stars",
-        items: [
-          ["starsAmount", "Amount", 0.4, 2.2, 0.05],
-          ["starsBrightness", "Brightness", 0.3, 2, 0.05],
-          ["starsColorVariance", "Color Difference", 0, 1.5, 0.05],
-          ["starsTwinkle", "Ambient Twinkle", 0, 2, 0.05]
-        ]
-      },
-      {
-        title: "Shooting Stars",
-        items: [["shootingFrequency", "Frequency", 0, 2, 0.05]]
-      },
-      {
-        title: "Nebulae",
-        items: [
-          ["nebulaColorVariance", "Color Difference", 0.3, 2.2, 0.05],
-          ["nebulaBrightness", "Brightness", 0.25, 2.2, 0.05],
-          ["nebulaSize", "Size", 0.45, 2.1, 0.05],
-          ["nebulaFrequency", "Frequency", 0.2, 2, 0.05]
-        ]
-      },
-      {
-        title: "Ambient Sound",
-        items: [["ambientVolume", "Volume", 0, 0.2, 0.0025]]
-      }
-    ];
+  // ==========================================================
+  // ARCHIVE ENTRY VIEWER
+  // ==========================================================
 
-    groups.forEach(group => {
-      const section = element("section", "settings-group");
-      section.appendChild(element("h3", "", group.title));
+  function openArchiveEntry(type, id) {
+    const item = STORE.get(type, id);
+    if (!item) {
+      showToast("This entry no longer exists.");
+      return;
+    }
 
-      group.items.forEach(([key, label, min, max, step]) => {
-        const row = element("label", "setting");
-        const top = element("div", "setting-heading");
-        const out = element("output", "", Number(scene[key]).toFixed(key === "ambientVolume" ? 3 : 2));
-        top.append(element("span", "", label), out);
+    const label =
+      type.charAt(0).toUpperCase() +
+      type.slice(1);
 
-        const input = document.createElement("input");
-        input.type = "range";
-        input.min = min;
-        input.max = max;
-        input.step = step;
-        input.value = scene[key];
+    openSubPanel({
+      key: `entry-${type}-${id}`,
+      title: item.title,
+      eyebrow: label.toUpperCase(),
+      wide: true,
 
-        input.addEventListener("input", () => {
-          scene[key] = Number(input.value);
-          out.textContent = scene[key].toFixed(key === "ambientVolume" ? 3 : 2);
-          if (key === "ambientVolume") updateAudioVolume();
-          if (key === "nebulaColorVariance") nebulaCache.clear();
-          if (key === "shootingFrequency") {
-            shootingStar = null;
-            nextMeteor = 0;
+      builder(container) {
+        const current = STORE.get(type, id);
+
+        if (!current) {
+          container.appendChild(
+            makeEmptyState("Entry not found.")
+          );
+          return;
+        }
+
+        const rating =
+          STORE.calculatedRating(type, current);
+
+        const information = element(
+          "section",
+          "archive-section"
+        );
+
+        information.appendChild(
+          makeHeading("Overview")
+        );
+
+        const metadata = [];
+
+        if (current.mediaType) {
+          metadata.push(
+            `Media: ${current.mediaType}`
+          );
+        }
+
+        if (current.releaseDate) {
+          metadata.push(
+            `Airing: ${current.releaseDate}`
+          );
+        }
+
+        if (current.status) {
+          metadata.push(
+            `Status: ${current.status}`
+          );
+        }
+
+        if (current.durationMinutes) {
+          metadata.push(
+            `Duration: ${formatDuration(current.durationMinutes)}`
+          );
+        }
+
+        metadata.push(
+          `Rating: ${formatRating(rating)}`
+        );
+
+        if (
+          Array.isArray(current.genres) &&
+          current.genres.length
+        ) {
+          metadata.push(
+            `Genres: ${current.genres.join(", ")}`
+          );
+        }
+
+        if (
+          Array.isArray(current.tags) &&
+          current.tags.length
+        ) {
+          metadata.push(
+            `Secondary Genres: ${current.tags.join(", ")}`
+          );
+        }
+
+        for (const text of metadata) {
+          information.appendChild(
+            element(
+              "p",
+              "archive-description",
+              text
+            )
+          );
+        }
+
+        if (current.notes) {
+          information.appendChild(
+            makeHeading("Observations")
+          );
+
+          const note = element(
+            "p",
+            "archive-description",
+            current.notes
+          );
+
+          note.style.whiteSpace = "pre-wrap";
+          information.appendChild(note);
+        }
+
+        container.appendChild(information);
+
+        const actions = element(
+          "div",
+          "archive-actions"
+        );
+
+        actions.appendChild(
+          makeButton(
+            "Edit",
+            () => openEntryEditor(type, id),
+            { primary: true }
+          )
+        );
+
+        if (current.constellation?.center) {
+          actions.appendChild(
+            makeButton(
+              "Find in Universe",
+              () => {
+                focusWorldPoint(
+                  current.constellation.center.x,
+                  current.constellation.center.y,
+                  type === "season" ? 1.65 : 1
+                );
+
+                closePanel();
+              }
+            )
+          );
+        }
+
+        actions.appendChild(
+          makeButton(
+            "Delete",
+            () => deleteArchiveEntry(type, id),
+            { danger: true }
+          )
+        );
+
+        container.appendChild(actions);
+
+        container.appendChild(
+          element("div", "archive-divider")
+        );
+
+        if (type === "group") {
+          renderChildren(
+            container,
+            "Productions",
+            "production",
+            STORE.children("group", id)
+          );
+
+          container.appendChild(
+            makeButton(
+              "+ Add Production",
+              () => openCreationForm(
+                "production",
+                { groupId: id }
+              )
+            )
+          );
+        }
+
+        if (type === "production") {
+          renderChildren(
+            container,
+            "Seasons",
+            "season",
+            STORE.children("production", id)
+          );
+
+          container.appendChild(
+            makeButton(
+              "+ Add Season",
+              () => openCreationForm(
+                "season",
+                { productionId: id }
+              )
+            )
+          );
+        }
+
+        if (type === "season") {
+          renderChildren(
+            container,
+            "Episodes",
+            "episode",
+            STORE.children("season", id)
+          );
+
+          container.appendChild(
+            makeButton(
+              "+ Add Episode",
+              () => openCreationForm(
+                "episode",
+                { seasonId: id }
+              )
+            )
+          );
+        }
+
+        if (type === "episode") {
+          const season = STORE.parent(
+            "episode",
+            current
+          );
+
+          if (season) {
+            container.appendChild(
+              makeButton(
+                "Open Season",
+                () => openArchiveEntry(
+                  "season",
+                  season.id
+                )
+              )
+            );
           }
-          saveSpaceSettings();
-        });
-
-        row.append(top, input);
-        section.appendChild(row);
-      });
-
-      container.appendChild(section);
+        }
+      }
     });
-
-    const backup = element("section", "settings-group");
-    backup.appendChild(element("h3", "", "Archive Backup"));
-
-    const actions = element("div", "archive-actions");
-    actions.appendChild(makeButton("Export Archive", exportArchiveJSON));
-    actions.appendChild(makeButton("Import Archive", requestArchiveImport));
-    backup.appendChild(actions);
-
-    container.appendChild(backup);
   }
 
-  function numericPairs(data) {
-    return (Array.isArray(data) ? data : [])
-      .map(item => ({ ...item, label: String(item.label ?? item.title ?? ""), value: Number(item.value) }))
-      .filter(item => Number.isFinite(item.value));
+  function renderChildren(
+    container,
+    heading,
+    childType,
+    children
+  ) {
+    container.appendChild(
+      makeHeading(heading)
+    );
+
+    const list = element(
+      "div",
+      "archive-list"
+    );
+
+    if (!children.length) {
+      list.appendChild(
+        makeEmptyState(
+          `No ${heading.toLowerCase()} added yet.`
+        )
+      );
+    }
+
+    for (const item of children) {
+      list.appendChild(
+        makeEntryRow({
+          title: item.title,
+
+          metadata: [
+            item.releaseDate || "",
+            item.status || ""
+          ],
+
+          rating: STORE.calculatedRating(
+            childType,
+            item
+          ),
+
+          onOpen: () =>
+            openArchiveEntry(
+              childType,
+              item.id
+            ),
+
+          onEdit: () =>
+            openEntryEditor(
+              childType,
+              item.id
+            )
+        })
+      );
+    }
+
+    container.appendChild(list);
   }
 
-  function chartColor(index) {
-    const colors = AC.statistics.palettes;
-    return colors[index % colors.length];
+  // ==========================================================
+  // EDITING EXISTING ENTRIES
+  // ==========================================================
+
+  function openEntryEditor(type, id) {
+    const item = STORE.get(type, id);
+    if (!item) return;
+
+    openSubPanel({
+      key: `edit-${type}-${id}`,
+      title: `Edit ${item.title}`,
+      eyebrow: "EDIT ENTRY",
+      wide: true,
+
+      builder(container) {
+        const form = element("form");
+        const fields = {};
+
+        function addField(key, label, options = {}) {
+          const field = makeField({
+            label,
+            value: item[key] ?? "",
+            ...options
+          });
+
+          fields[key] = field.input;
+          form.appendChild(field.wrapper);
+        }
+
+        function addNotesField() {
+          const field = makeTextarea(
+            "Personal Thoughts / Observations",
+            item.notes || ""
+          );
+
+          fields.notes = field.textarea;
+          form.appendChild(field.wrapper);
+        }
+
+        addField(
+          "title",
+          "Title",
+          { required: true }
+        );
+
+        if (type === "group" ||
+            type === "production") {
+          addField(
+            "banner",
+            "Banner Image URL"
+          );
+
+          addField(
+            "genres",
+            "Main Genres (comma-separated)",
+            {
+              value: (item.genres || []).join(", ")
+            }
+          );
+
+          addField(
+            "tags",
+            "Secondary Genres (comma-separated)",
+            {
+              value: (item.tags || []).join(", ")
+            }
+          );
+        }
+
+        if (type === "production") {
+          const groupField = makeSelect(
+            "Parent Group",
+            [
+              {
+                value: "",
+                label: "Standalone"
+              },
+              ...STORE.all("group").map(group => ({
+                value: group.id,
+                label: group.title
+              }))
+            ],
+            item.groupId || ""
+          );
+
+          fields.groupId =
+            groupField.select;
+
+          form.appendChild(
+            groupField.wrapper
+          );
+
+          addField(
+            "mediaType",
+            "Form of Media"
+          );
+        }
+
+        if (type === "production" ||
+            type === "season" ||
+            type === "episode") {
+          addField(
+            "releaseDate",
+            "Release / Airing"
+          );
+        }
+
+        if (type === "production" ||
+            type === "season") {
+          addField(
+            "endDate",
+            "End of Airing"
+          );
+
+          const status = makeSelect(
+            "Watching Status",
+            [
+              { value: "", label: "Not Set" },
+              { value: "Finished", label: "Finished" },
+              { value: "Watching", label: "Watching" },
+              { value: "Discontinued", label: "Discontinued" }
+            ],
+            item.status || ""
+          );
+
+          fields.status = status.select;
+          form.appendChild(status.wrapper);
+        }
+
+        if (type === "production" ||
+            type === "episode") {
+          addField(
+            "durationMinutes",
+            "Duration (minutes)",
+            {
+              type: "number",
+              min: 0,
+              step: 1
+            }
+          );
+
+          addField(
+            "rating",
+            "Rating (1–10, half-stars)",
+            {
+              type: "number",
+              min: 1,
+              max: 10,
+              step: 0.5,
+              value: item.rating ?? ""
+            }
+          );
+
+          addField(
+            "watchedAt",
+            "Last Watched (YYYY-MM-DD)",
+            {
+              value: item.watchedAt || ""
+            }
+          );
+        }
+
+        if (type === "season" ||
+            type === "episode") {
+          addField(
+            "number",
+            "Number",
+            {
+              type: "number",
+              min: 0,
+              step: 1,
+              value: item.number ?? ""
+            }
+          );
+        }
+
+        if (
+          type === "group" ||
+          type === "production" ||
+          type === "season" ||
+          type === "episode"
+        ) {
+          addNotesField();
+        }
+
+        const save = makeButton(
+          "Save Changes",
+          null,
+          { primary: true }
+        );
+
+        save.type = "submit";
+        form.appendChild(save);
+
+        form.addEventListener(
+          "submit",
+          event => {
+            event.preventDefault();
+
+            const changes = {};
+
+            for (
+              const [key, input]
+              of Object.entries(fields)
+            ) {
+              changes[key] = input.value;
+            }
+
+            if ("groupId" in changes) {
+              changes.groupId =
+                changes.groupId || null;
+            }
+
+            if ("number" in changes) {
+              changes.number =
+                changes.number === ""
+                  ? null
+                  : Number(changes.number);
+            }
+
+            const result =
+              STORE.update(
+                type,
+                id,
+                changes
+              );
+
+            if (!result) {
+              showToast(
+                "Changes could not be saved."
+              );
+              return;
+            }
+
+            archiveSkyDirty = true;
+
+            showToast(
+              "Entry updated."
+            );
+
+            openArchiveEntry(type, id);
+          }
+        );
+
+        container.appendChild(form);
+      }
+    });
   }
 
-  function chartSvg(width = 600, height = 320) {
-    const node = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
-    node.style.width = "100%";
-    node.style.height = "auto";
-    return node;
+  function deleteArchiveEntry(type, id) {
+    const item = STORE.get(type, id);
+    if (!item) return;
+
+    const warning = type === "production"
+      ? "Its seasons and episodes will also be deleted."
+      : type === "season"
+        ? "Its episodes will also be deleted."
+        : type === "group"
+          ? "Its productions will become standalone."
+          : "";
+
+    if (!confirm(
+      `Delete "${item.title}"?\n${warning}`
+    )) {
+      return;
+    }
+
+    const result = STORE.delete(type, id);
+
+    if (!result) {
+      showToast("Deletion failed.");
+      return;
+    }
+
+    archiveSkyDirty = true;
+
+    panelHistory = [];
+
+    showToast("Entry deleted.");
+
+    showPanel({
+      key: "library",
+      title: "Library",
+      wide: true,
+      builder: buildLibraryPanel
+    });
+  }
+
+  // ==========================================================
+  // STATISTICS DATA
+  // ==========================================================
+
+  function productionRatingData() {
+    return STORE.ratingDistribution();
+  }
+
+  function genreOverlapData() {
+    const intersections =
+      STORE.genreIntersections();
+
+    const counts = new Map();
+
+    for (const set of intersections) {
+      for (const genre of set.genres) {
+        counts.set(
+          genre,
+          (counts.get(genre) || 0) +
+            set.count
+        );
+      }
+    }
+
+    return {
+      sets: intersections,
+      counts: [...counts].map(
+        ([label, value]) => ({
+          label,
+          value
+        })
+      )
+    };
+  }
+
+  function timeSeriesData() {
+    const timeline = new Map();
+
+    function add(date, minutes) {
+      if (!date || !minutes) return;
+
+      const parsed = Date.parse(date);
+      if (!Number.isFinite(parsed)) return;
+
+      const key = new Date(parsed)
+        .toISOString()
+        .slice(0, 10);
+
+      timeline.set(
+        key,
+        (timeline.get(key) || 0) +
+          minutes
+      );
+    }
+
+    function record(entry) {
+      const minutes =
+        Number(entry.durationMinutes) || 0;
+
+      if (!minutes) return;
+
+      if (entry.viewings?.length) {
+        for (const viewing of entry.viewings) {
+          add(
+            typeof viewing === "string"
+              ? viewing
+              : viewing.date,
+            minutes
+          );
+        }
+      } else {
+        add(entry.watchedAt, minutes);
+      }
+    }
+
+    for (
+      const production
+      of STORE.all("production")
+    ) {
+      if (
+        !STORE.children(
+          "production",
+          production.id
+        ).length
+      ) {
+        record(production);
+      }
+    }
+
+    for (
+      const episode
+      of STORE.all("episode")
+    ) {
+      record(episode);
+    }
+
+    return [...timeline]
+      .sort((a, b) =>
+        a[0].localeCompare(b[0])
+      )
+      .map(([label, value]) => ({
+        label,
+        value
+      }));
   }
 
   function getStatisticsData(datasetId) {
     if (datasetId === "watchTime") {
-      const timeline = new Map();
-
-      STORE.all("production").forEach(prod => {
-        if (STORE.children("production", prod.id).length) return;
-        if (!prod.watchedAt || !prod.durationMinutes) return;
-        timeline.set(prod.watchedAt, (timeline.get(prod.watchedAt) || 0) + Number(prod.durationMinutes || 0));
-      });
-
-      STORE.all("episode").forEach(ep => {
-        if (!ep.watchedAt || !ep.durationMinutes) return;
-        timeline.set(ep.watchedAt, (timeline.get(ep.watchedAt) || 0) + Number(ep.durationMinutes || 0));
-      });
-
-      return [...timeline].sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value }));
+      return timeSeriesData();
     }
 
-    if (datasetId === "mediaBreakdown") return STORE.mediaTimeBreakdown();
-    if (datasetId === "genreDistribution") return STORE.genreDistribution();
-    if (datasetId === "genreOverlap") return { sets: STORE.genreIntersections(), counts: STORE.genreDistribution() };
-    if (datasetId === "ratingDistribution") return STORE.ratingDistribution().map(item => ({ ...item, label: item.title, value: item.rating }));
-    if (datasetId === "ratingRankings") return STORE.ranking().map(item => ({ ...item, label: item.title, value: item.rating }));
+    if (datasetId === "mediaBreakdown") {
+      return STORE.mediaTimeBreakdown()
+        .filter(item => item.value > 0);
+    }
+
+    if (datasetId === "genreDistribution") {
+      return STORE.genreDistribution();
+    }
+
+    if (datasetId === "genreOverlap") {
+      return genreOverlapData();
+    }
+
+    if (datasetId === "ratingDistribution") {
+      return productionRatingData().map(
+        item => ({
+          label: item.title,
+          value: item.rating,
+          ...item
+        })
+      );
+    }
+
+    if (datasetId === "ratingRankings") {
+      return STORE.ranking().map(
+        item => ({
+          label: item.title,
+          value: item.rating,
+          ...item
+        })
+      );
+    }
+
     return [];
   }
 
+  // ==========================================================
+  // SVG CHART UTILITIES
+  // ==========================================================
+
+  function chartSvg(width = 600, height = 300) {
+    const svg = svgElement("svg", {
+      viewBox: `0 0 ${width} ${height}`,
+      role: "img",
+      "aria-label": "Statistics diagram"
+    });
+
+    svg.style.width = "100%";
+    svg.style.height = "auto";
+
+    return svg;
+  }
+
+  function chartColor(index) {
+    const colors =
+      AC.statistics.palettes;
+
+    return colors[index % colors.length];
+  }
+
+  function drawSvgText(
+    svg,
+    x,
+    y,
+    text,
+    options = {}
+  ) {
+    const node = svgElement("text", {
+      x,
+      y,
+      fill: options.fill ||
+        "rgba(218,232,255,.74)",
+      "font-size": options.size || 11,
+      "font-family": "system-ui, sans-serif",
+      "text-anchor": options.anchor ||
+        "start"
+    });
+
+    node.textContent = String(text);
+    svg.appendChild(node);
+
+    return node;
+  }
+
+  function drawSvgLine(
+    svg,
+    x1,
+    y1,
+    x2,
+    y2,
+    options = {}
+  ) {
+    const line = svgElement("line", {
+      x1,
+      y1,
+      x2,
+      y2,
+      stroke: options.stroke ||
+        "rgba(189,215,255,.25)",
+      "stroke-width": options.width || 1
+    });
+
+    svg.appendChild(line);
+    return line;
+  }
+
+  function drawSvgRect(
+    svg,
+    x,
+    y,
+    width,
+    height,
+    options = {}
+  ) {
+    const rect = svgElement("rect", {
+      x,
+      y,
+      width: Math.max(0, width),
+      height: Math.max(0, height),
+      rx: options.radius || 0,
+      fill: options.fill ||
+        chartColor(0),
+      opacity: options.opacity ?? 1
+    });
+
+    svg.appendChild(rect);
+    return rect;
+  }
+
+  function numericPairs(data) {
+    if (!Array.isArray(data)) return [];
+
+    return data.map(item => ({
+      ...item,
+      label: String(
+        item.label ?? item.title ?? ""
+      ),
+      value: Number(item.value)
+    })).filter(item =>
+      Number.isFinite(item.value)
+    );
+  }
+
+  // ==========================================================
+  // RANKED BAR CHART
+  // ==========================================================
+
   function renderRankedBar(data) {
-    const values = numericPairs(data).sort((a, b) => b.value - a.value).slice(0, 14);
-    const height = Math.max(240, values.length * 34 + 35);
-    const svgNode = chartSvg(600, height);
-    const max = Math.max(1, ...values.map(x => x.value));
+    const values = numericPairs(data)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 14);
+
+    const height = Math.max(
+      240,
+      values.length * 34 + 35
+    );
+
+    const svg = chartSvg(600, height);
+    const max = Math.max(
+      1,
+      ...values.map(x => x.value)
+    );
 
     values.forEach((item, index) => {
       const y = 12 + index * 34;
-      svgNode.appendChild(svg("text", { x: 10, y: y + 12, fill: "rgba(218,232,255,.74)", "font-size": 11 }));
-      svgNode.lastChild.textContent = item.label.length > 22 ? item.label.slice(0, 21) + "…" : item.label;
 
-      svgNode.appendChild(svg("rect", {
-        x: 190, y, width: (item.value / max) * 335, height: 17, rx: 4,
-        fill: chartColor(index), opacity: 0.76
-      }));
+      drawSvgText(
+        svg,
+        10,
+        y + 12,
+        item.label.length > 22
+          ? item.label.slice(0, 21) + "…"
+          : item.label,
+        { size: 11 }
+      );
 
-      const label = svg("text", { x: 585, y: y + 12, fill: "rgba(218,232,255,.74)", "font-size": 11, "text-anchor": "end" });
-      label.textContent = item.value.toFixed(2);
-      svgNode.appendChild(label);
+      drawSvgRect(
+        svg,
+        190,
+        y,
+        (item.value / max) * 335,
+        17,
+        {
+          radius: 4,
+          fill: chartColor(index),
+          opacity: 0.76
+        }
+      );
+
+      drawSvgText(
+        svg,
+        585,
+        y + 12,
+        Number(item.value.toFixed(2)),
+        {
+          anchor: "end",
+          size: 11
+        }
+      );
     });
 
-    return svgNode;
+    return svg;
   }
 
+  // ==========================================================
+  // DONUT CHART
+  // ==========================================================
+
   function renderDonut(data) {
-    const values = numericPairs(data).filter(x => x.value > 0).slice(0, 12);
-    const svgNode = chartSvg(600, 350);
-    const total = values.reduce((sum, x) => sum + x.value, 0);
-    if (!total) return svgNode;
+    const values = numericPairs(data)
+      .filter(x => x.value > 0)
+      .slice(0, 12);
+
+    const svg = chartSvg(600, 350);
+    const total = values.reduce(
+      (sum, x) => sum + x.value,
+      0
+    );
+
+    if (!total) return svg;
 
     const cx = 190;
     const cy = 160;
     const radius = 110;
     const circumference = TAU * radius;
+
     let offset = 0;
 
     values.forEach((item, index) => {
-      const fraction = item.value / total;
-      svgNode.appendChild(svg("circle", {
-        cx, cy, r: radius, fill: "none", stroke: chartColor(index), "stroke-width": 37,
-        "stroke-dasharray": `${fraction * circumference} ${circumference}`,
-        "stroke-dashoffset": -offset * circumference,
-        transform: `rotate(-90 ${cx} ${cy})`
-      }));
+      const fraction =
+        item.value / total;
 
+      const circleNode = svgElement(
+        "circle",
+        {
+          cx,
+          cy,
+          r: radius,
+          fill: "none",
+          stroke: chartColor(index),
+          "stroke-width": 37,
+          "stroke-dasharray":
+            `${fraction * circumference} ${circumference}`,
+          "stroke-dashoffset":
+            -offset * circumference,
+          transform:
+            `rotate(-90 ${cx} ${cy})`
+        }
+      );
+
+      svg.appendChild(circleNode);
       offset += fraction;
 
-      svgNode.appendChild(svg("rect", { x: 360, y: 30 + index * 25, width: 10, height: 10, rx: 3, fill: chartColor(index) }));
-      const label = svg("text", { x: 380, y: 40 + index * 25, fill: "rgba(218,232,255,.74)", "font-size": 10 });
-      label.textContent = `${item.label.slice(0, 22)} (${Math.round(fraction * 100)}%)`;
-      svgNode.appendChild(label);
+      drawSvgRect(
+        svg,
+        360,
+        30 + index * 25,
+        10,
+        10,
+        {
+          radius: 3,
+          fill: chartColor(index)
+        }
+      );
+
+      drawSvgText(
+        svg,
+        380,
+        40 + index * 25,
+        `${item.label.slice(0, 22)} (${Math.round(fraction * 100)}%)`,
+        { size: 10 }
+      );
     });
 
-    const totalText = svg("text", { x: cx, y: cy, "text-anchor": "middle", fill: "rgba(218,232,255,.74)", "font-size": 11 });
-    totalText.textContent = "TOTAL";
-    svgNode.appendChild(totalText);
+    drawSvgText(
+      svg,
+      cx,
+      cy,
+      "TOTAL",
+      {
+        anchor: "middle",
+        size: 11
+      }
+    );
 
-    const totalValue = svg("text", { x: cx, y: cy + 24, "text-anchor": "middle", fill: "#edf4ff", "font-size": 22 });
-    totalValue.textContent = total.toFixed(1);
-    svgNode.appendChild(totalValue);
+    drawSvgText(
+      svg,
+      cx,
+      cy + 24,
+      Number(total.toFixed(1)),
+      {
+        anchor: "middle",
+        size: 22,
+        fill: "#edf4ff"
+      }
+    );
 
-    return svgNode;
+    return svg;
   }
+
+  // ==========================================================
+  // LINE CHART
+  // ==========================================================
 
   function renderLineChart(data) {
     const values = numericPairs(data);
-    const svgNode = chartSvg(600, 310);
-    if (!values.length) return svgNode;
+    const svg = chartSvg(600, 310);
 
-    const max = Math.max(1, ...values.map(v => v.value));
+    if (!values.length) return svg;
+
+    const max = Math.max(
+      1,
+      ...values.map(item => item.value)
+    );
+
     const left = 55;
     const top = 25;
     const right = 570;
     const bottom = 255;
 
     for (let i = 0; i <= 4; i++) {
-      const y = bottom - i * (bottom - top) / 4;
-      svgNode.appendChild(svg("line", { x1: left, y1: y, x2: right, y2: y, stroke: "rgba(189,215,255,.25)", "stroke-width": 1 }));
-      const t = svg("text", { x: 45, y: y + 4, fill: "rgba(218,232,255,.74)", "font-size": 10, "text-anchor": "end" });
-      t.textContent = (max * i / 4).toFixed(1);
-      svgNode.appendChild(t);
+      const y =
+        bottom - i * (bottom - top) / 4;
+
+      drawSvgLine(
+        svg,
+        left,
+        y,
+        right,
+        y
+      );
+
+      drawSvgText(
+        svg,
+        45,
+        y + 4,
+        (max * i / 4).toFixed(1),
+        {
+          anchor: "end",
+          size: 10
+        }
+      );
     }
 
-    const points = values.map((item, index) => ({
-      x: values.length === 1 ? (left + right) / 2 : left + index / (values.length - 1) * (right - left),
-      y: bottom - item.value / max * (bottom - top)
-    }));
+    const points = values.map(
+      (item, index) => ({
+        x: values.length === 1
+          ? (left + right) / 2
+          : left +
+            index / (values.length - 1) *
+            (right - left),
 
-    const path = svg("path", {
-      d: points.map((p, i) => `${i ? "L" : "M"} ${p.x} ${p.y}`).join(" "),
+        y: bottom -
+          item.value / max *
+          (bottom - top)
+      })
+    );
+
+    const path = svgElement("path", {
+      d: points.map(
+        (p, i) =>
+          `${i ? "L" : "M"} ${p.x} ${p.y}`
+      ).join(" "),
+
       fill: "none",
       stroke: chartColor(0),
       "stroke-width": 2.5,
       "stroke-linejoin": "round",
       "stroke-linecap": "round"
     });
-    svgNode.appendChild(path);
 
-    points.forEach((p, index) => {
-      const dot = svg("circle", { cx: p.x, cy: p.y, r: 3.5, fill: "#dceaff" });
-      const title = svg("title");
-      title.textContent = `${values[index].label}: ${values[index].value}`;
-      dot.appendChild(title);
-      svgNode.appendChild(dot);
+    svg.appendChild(path);
+
+    points.forEach((p, i) => {
+      const dot = svgElement(
+        "circle",
+        {
+          cx: p.x,
+          cy: p.y,
+          r: 3.5,
+          fill: "#dceaff"
+        }
+      );
+
+      const tooltip = svgElement("title");
+      tooltip.textContent =
+        `${values[i].label}: ${values[i].value}`;
+
+      dot.appendChild(tooltip);
+      svg.appendChild(dot);
     });
 
-    return svgNode;
+    drawSvgText(
+      svg,
+      left,
+      288,
+      values[0].label,
+      { size: 10 }
+    );
+
+    drawSvgText(
+      svg,
+      right,
+      288,
+      values[values.length - 1].label,
+      {
+        anchor: "end",
+        size: 10
+      }
+    );
+
+    return svg;
   }
 
-  function renderStatisticsChart(datasetId, chartId, data) {
-    const surface = element("div", "chart-surface");
+  // ==========================================================
+  // HISTOGRAM
+  // ==========================================================
 
-    if (!STATS.compatible(datasetId, chartId)) {
-      surface.appendChild(element("p", "chart-notice", "This diagram is not compatible with the selected data."));
-      return surface;
+  function renderHistogram(data) {
+    const values = numericPairs(data);
+    const svg = chartSvg(600, 300);
+
+    const bins = Array(19).fill(0);
+
+    for (const item of values) {
+      const index = clamp(
+        Math.round((item.value - 1) * 2),
+        0,
+        18
+      );
+
+      bins[index]++;
+    }
+
+    const max = Math.max(1, ...bins);
+
+    bins.forEach((value, index) => {
+      const barWidth = 25;
+      const x = 62 + index * 27;
+
+      const height =
+        value / max * 190;
+
+      drawSvgRect(
+        svg,
+        x,
+        235 - height,
+        barWidth,
+        height,
+        {
+          radius: 3,
+          fill: chartColor(index)
+        }
+      );
+
+      if (index % 2 === 0) {
+        drawSvgText(
+          svg,
+          x + barWidth / 2,
+          253,
+          (index / 2 + 1).toFixed(0),
+          {
+            anchor: "middle",
+            size: 9
+          }
+        );
+      }
+    });
+
+    drawSvgText(
+      svg,
+      300,
+      285,
+      "Rating",
+      { anchor: "middle", size: 11 }
+    );
+
+    return svg;
+  }
+
+  // ==========================================================
+  // SCATTER PLOT
+  // ==========================================================
+
+  function renderScatter(data) {
+    const values = numericPairs(data);
+    const svg = chartSvg(600, 310);
+
+    const left = 50;
+    const bottom = 260;
+    const width = 500;
+    const height = 220;
+
+    const xValues = values.map((item, index) => {
+      const parsed = Date.parse(item.releaseDate || "");
+      return Number.isFinite(parsed)
+        ? new Date(parsed).getFullYear()
+        : index;
+    });
+
+    const minX = Math.min(0, ...xValues);
+    const maxX = Math.max(minX + 1, ...xValues);
+    const minY = Math.min(0, ...values.map(x => x.value));
+    const maxY = Math.max(minY + 1, ...values.map(x => x.value));
+
+    drawSvgLine(
+      svg, left, 35, left, bottom
+    );
+
+    drawSvgLine(
+      svg, left, bottom, 560, bottom
+    );
+
+    values.forEach((item, index) => {
+      const x =
+        left +
+        (xValues[index] - minX) /
+        (maxX - minX) * width;
+
+      const y =
+        bottom -
+        (item.value - minY) /
+        (maxY - minY) * height;
+
+      const dot = svgElement(
+        "circle",
+        {
+          cx: x,
+          cy: y,
+          r: 4.5,
+          fill: chartColor(index),
+          opacity: 0.8
+        }
+      );
+
+      const tooltip = svgElement("title");
+      tooltip.textContent =
+        `${item.label}: ${item.value}`;
+
+      dot.appendChild(tooltip);
+      svg.appendChild(dot);
+    });
+
+    return svg;
+  }
+
+  // ==========================================================
+  // RADAR CHART
+  // ==========================================================
+
+  function renderRadar(data) {
+    const values = numericPairs(data)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+
+    const svg = chartSvg(600, 360);
+
+    if (values.length < 3) return svg;
+
+    const cx = 300;
+    const cy = 174;
+    const radius = 118;
+
+    const max = Math.max(
+      1,
+      ...values.map(x => x.value)
+    );
+
+    function point(i, fraction) {
+      const angle =
+        -Math.PI / 2 +
+        i / values.length * TAU;
+
+      return {
+        x: cx +
+          Math.cos(angle) *
+          radius * fraction,
+
+        y: cy +
+          Math.sin(angle) *
+          radius * fraction
+      };
+    }
+
+    for (let level = 1; level <= 4; level++) {
+      const points = values.map(
+        (_, i) => point(i, level / 4)
+      );
+
+      const polygon = svgElement(
+        "polygon",
+        {
+          points: points.map(p =>
+            `${p.x},${p.y}`
+          ).join(" "),
+          fill: "none",
+          stroke: "rgba(175,204,255,.18)"
+        }
+      );
+
+      svg.appendChild(polygon);
+    }
+
+    values.forEach((item, i) => {
+      const outer = point(i, 1);
+
+      drawSvgLine(
+        svg,
+        cx,
+        cy,
+        outer.x,
+        outer.y
+      );
+
+      const label = point(i, 1.18);
+
+      drawSvgText(
+        svg,
+        label.x,
+        label.y,
+        item.label.slice(0, 16),
+        {
+          anchor: "middle",
+          size: 10
+        }
+      );
+    });
+
+    const polygon = svgElement(
+      "polygon",
+      {
+        points: values.map(
+          (item, i) => {
+            const p = point(
+              i,
+              item.value / max
+            );
+
+            return `${p.x},${p.y}`;
+          }
+        ).join(" "),
+
+        fill: "rgba(146,187,255,.2)",
+        stroke: chartColor(0),
+        "stroke-width": 2
+      }
+    );
+
+    svg.appendChild(polygon);
+
+    return svg;
+  }
+
+  // ==========================================================
+  // TREEMAP
+  // ==========================================================
+
+  function renderTreemap(data) {
+    const values = numericPairs(data)
+      .filter(x => x.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 18);
+
+    const svg = chartSvg(600, 330);
+
+    function subdivide(items, x, y, w, h, vertical) {
+      if (!items.length) return;
+
+      if (items.length === 1) {
+        const item = items[0];
+        const index = values.indexOf(item);
+
+        drawSvgRect(
+          svg,
+          x + 2,
+          y + 2,
+          w - 4,
+          h - 4,
+          {
+            radius: 6,
+            fill: chartColor(index),
+            opacity: 0.62
+          }
+        );
+
+        if (w > 65 && h > 32) {
+          drawSvgText(
+            svg,
+            x + 9,
+            y + 20,
+            item.label.slice(0, Math.floor(w / 9)),
+            {
+              fill: "#ffffff",
+              size: 11
+            }
+          );
+        }
+
+        return;
+      }
+
+      const total = items.reduce(
+        (sum, item) => sum + item.value,
+        0
+      );
+
+      const halfway = total / 2;
+
+      let accum = 0;
+      let split = 1;
+
+      for (let i = 0; i < items.length - 1; i++) {
+        accum += items[i].value;
+
+        if (accum >= halfway) {
+          split = i + 1;
+          break;
+        }
+      }
+
+      const first = items.slice(0, split);
+      const second = items.slice(split);
+
+      const sumFirst = first.reduce(
+        (a, b) => a + b.value,
+        0
+      );
+
+      const ratio = sumFirst / total;
+
+      if (vertical) {
+        subdivide(
+          first, x, y, w * ratio, h, !vertical
+        );
+
+        subdivide(
+          second,
+          x + w * ratio,
+          y,
+          w * (1 - ratio),
+          h,
+          !vertical
+        );
+      } else {
+        subdivide(
+          first, x, y, w, h * ratio, !vertical
+        );
+
+        subdivide(
+          second,
+          x,
+          y + h * ratio,
+          w,
+          h * (1 - ratio),
+          !vertical
+        );
+      }
+    }
+
+    if (values.length) {
+      subdivide(values, 8, 8, 584, 314, true);
+    }
+
+    return svg;
+  }
+
+  // ==========================================================
+  // BOX AND WHISKER
+  // ==========================================================
+
+  function renderBoxPlot(data) {
+    const values = numericPairs(data)
+      .map(x => x.value)
+      .sort((a, b) => a - b);
+
+    const svg = chartSvg(600, 240);
+    if (!values.length) return svg;
+
+    function quantile(q) {
+      const position =
+        (values.length - 1) * q;
+
+      const lower = Math.floor(position);
+      const upper = Math.ceil(position);
+
+      return lerp(
+        values[lower],
+        values[upper],
+        position - lower
+      );
+    }
+
+    const q1 = quantile(0.25);
+    const median = quantile(0.5);
+    const q3 = quantile(0.75);
+    const min = values[0];
+    const max = values[values.length - 1];
+    const iqr = q3 - q1;
+
+    const low = values.find(
+      v => v >= q1 - 1.5 * iqr
+    ) ?? min;
+
+    const high = [...values].reverse().find(
+      v => v <= q3 + 1.5 * iqr
+    ) ?? max;
+
+    const axisMin = Math.min(0, min);
+    const axisMax = Math.max(10, max);
+
+    const x = value =>
+      45 +
+      (value - axisMin) /
+      Math.max(1, axisMax - axisMin) *
+      510;
+
+    drawSvgLine(
+      svg,
+      45,
+      180,
+      555,
+      180
+    );
+
+    drawSvgLine(
+      svg,
+      x(low),
+      110,
+      x(high),
+      110,
+      {
+        stroke: "#c2d7ff",
+        width: 2
+      }
+    );
+
+    drawSvgRect(
+      svg,
+      x(q1),
+      75,
+      Math.max(1, x(q3) - x(q1)),
+      70,
+      {
+        radius: 5,
+        fill: chartColor(0),
+        opacity: 0.48
+      }
+    );
+
+    for (const value of [
+      low,
+      median,
+      high
+    ]) {
+      drawSvgLine(
+        svg,
+        x(value),
+        value === median ? 73 : 92,
+        x(value),
+        value === median ? 147 : 128,
+        {
+          stroke: "#edf4ff",
+          width: 2
+        }
+      );
+    }
+
+    values.filter(
+      v => v < low || v > high
+    ).forEach(value => {
+      svg.appendChild(
+        svgElement("circle", {
+          cx: x(value),
+          cy: 110,
+          r: 3.5,
+          fill: "#e1c69e"
+        })
+      );
+    });
+
+    drawSvgText(
+      svg, 300, 215,
+      `Median ${median.toFixed(2)} · Q1 ${q1.toFixed(2)} · Q3 ${q3.toFixed(2)}`,
+      { anchor: "middle", size: 11 }
+    );
+
+    return svg;
+  }
+
+  // ==========================================================
+  // STACKED BAR CHART
+  // ==========================================================
+
+  function renderStackedBar(data) {
+    const values = numericPairs(data)
+      .filter(x => x.value > 0)
+      .slice(0, 16);
+
+    const svg = chartSvg(600, 275);
+
+    const total = values.reduce(
+      (sum, item) => sum + item.value,
+      0
+    );
+
+    if (!total) return svg;
+
+    let x = 25;
+
+    values.forEach((item, index) => {
+      const width = item.value / total * 550;
+
+      drawSvgRect(
+        svg,
+        x,
+        88,
+        width,
+        55,
+        {
+          fill: chartColor(index),
+          opacity: 0.8
+        }
+      );
+
+      x += width;
+    });
+
+    drawSvgText(
+      svg,
+      300,
+      52,
+      `Total: ${total.toFixed(1)}`,
+      {
+        anchor: "middle",
+        size: 17,
+        fill: "#edf4ff"
+      }
+    );
+
+    values.slice(0, 10).forEach(
+      (item, index) => {
+        const col = index % 2;
+        const row = Math.floor(index / 2);
+
+        drawSvgRect(
+          svg,
+          35 + col * 270,
+          165 + row * 21,
+          9,
+          9,
+          {
+            fill: chartColor(index),
+            radius: 2
+          }
+        );
+
+        drawSvgText(
+          svg,
+          50 + col * 270,
+          174 + row * 21,
+          item.label.slice(0, 24),
+          { size: 10 }
+        );
+      }
+    );
+
+    return svg;
+  }
+
+  // ==========================================================
+  // GENRE NETWORK
+  // ==========================================================
+
+  function renderNetwork(overlap) {
+    const svg = chartSvg(600, 370);
+
+    const genres = overlap.counts
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 12);
+
+    const cx = 300;
+    const cy = 180;
+    const radius = 125;
+
+    const positions = new Map();
+
+    genres.forEach((genre, index) => {
+      const angle =
+        -Math.PI / 2 +
+        index / genres.length * TAU;
+
+      positions.set(genre.label, {
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius
+      });
+    });
+
+    const pairCounts = new Map();
+
+    for (const set of overlap.sets) {
+      const filtered = set.genres.filter(
+        genre => positions.has(genre)
+      );
+
+      for (let i = 0; i < filtered.length; i++) {
+        for (let j = i + 1; j < filtered.length; j++) {
+          const key = [
+            filtered[i],
+            filtered[j]
+          ].sort().join("|");
+
+          pairCounts.set(
+            key,
+            (pairCounts.get(key) || 0) +
+              set.count
+          );
+        }
+      }
+    }
+
+    for (const [key, count] of pairCounts) {
+      const [a, b] = key.split("|");
+      const pa = positions.get(a);
+      const pb = positions.get(b);
+
+      if (!pa || !pb) continue;
+
+      drawSvgLine(
+        svg,
+        pa.x,
+        pa.y,
+        pb.x,
+        pb.y,
+        {
+          stroke: "rgba(165,195,255,.24)",
+          width: Math.min(5, 0.5 + count)
+        }
+      );
+    }
+
+    genres.forEach((genre, index) => {
+      const p = positions.get(genre.label);
+
+      svg.appendChild(
+        svgElement("circle", {
+          cx: p.x,
+          cy: p.y,
+          r: 5 + Math.sqrt(genre.value) * 3,
+          fill: chartColor(index),
+          opacity: 0.85
+        })
+      );
+
+      drawSvgText(
+        svg,
+        p.x,
+        p.y + (
+          p.y > cy ? 27 : -17
+        ),
+        genre.label.slice(0, 17),
+        {
+          anchor: "middle",
+          size: 10
+        }
+      );
+    });
+
+    return svg;
+  }
+
+  // ==========================================================
+  // UPSET PLOT
+  // ==========================================================
+
+  function renderUpSet(overlap) {
+    const sets = overlap.sets
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+
+    const genres = [...new Set(
+      sets.flatMap(x => x.genres)
+    )].slice(0, 8);
+
+    const svg = chartSvg(
+      600,
+      Math.max(300, genres.length * 28 + 125)
+    );
+
+    if (!sets.length) return svg;
+
+    const max = Math.max(
+      1,
+      ...sets.map(x => x.count)
+    );
+
+    const columnWidth = 37;
+    const left = 125;
+    const gridTop = 125;
+
+    genres.forEach((genre, row) => {
+      drawSvgText(
+        svg,
+        115,
+        gridTop + row * 28 + 5,
+        genre.slice(0, 15),
+        {
+          anchor: "end",
+          size: 10
+        }
+      );
+    });
+
+    sets.forEach((set, column) => {
+      const x = left + column * columnWidth;
+      const barHeight = set.count / max * 70;
+
+      drawSvgRect(
+        svg,
+        x - 10,
+        100 - barHeight,
+        20,
+        barHeight,
+        {
+          radius: 3,
+          fill: chartColor(column)
+        }
+      );
+
+      const activeRows = [];
+
+      genres.forEach((genre, row) => {
+        const included =
+          set.genres.includes(genre);
+
+        const y =
+          gridTop + row * 28;
+
+        svg.appendChild(
+          svgElement("circle", {
+            cx: x,
+            cy: y,
+            r: included ? 4 : 2.5,
+            fill: included
+              ? "#dceaff"
+              : "rgba(160,190,235,.18)"
+          })
+        );
+
+        if (included) {
+          activeRows.push(y);
+        }
+      });
+
+      if (activeRows.length > 1) {
+        drawSvgLine(
+          svg,
+          x,
+          Math.min(...activeRows),
+          x,
+          Math.max(...activeRows),
+          {
+            stroke: chartColor(column),
+            width: 1.5
+          }
+        );
+      }
+    });
+
+    return svg;
+  }
+
+  // ==========================================================
+  // VENN DIAGRAM
+  // ==========================================================
+
+  function renderVenn(overlap) {
+    const svg = chartSvg(600, 340);
+
+    const genres = overlap.counts
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 3);
+
+    if (genres.length < 2) return svg;
+
+    const locations = [
+      { x: 250, y: 145 },
+      { x: 350, y: 145 },
+      { x: 300, y: 225 }
+    ];
+
+    genres.forEach((genre, index) => {
+      const p = locations[index];
+
+      svg.appendChild(
+        svgElement("circle", {
+          cx: p.x,
+          cy: p.y,
+          r: 94,
+          fill: chartColor(index),
+          "fill-opacity": 0.20,
+          stroke: chartColor(index),
+          "stroke-opacity": 0.62,
+          "stroke-width": 1.4
+        })
+      );
+
+      drawSvgText(
+        svg,
+        p.x,
+        p.y - 56,
+        genre.label,
+        {
+          anchor: "middle",
+          size: 11
+        }
+      );
+    });
+
+    const selected = genres.map(g => g.label);
+
+    const productions = STORE.all("production");
+
+    // Exact membership signatures for the displayed sets.
+    const signatureCounts = new Map();
+
+    for (const production of productions) {
+      const members = selected.filter(
+        genre => (production.genres || [])
+          .includes(genre)
+      );
+
+      if (!members.length) continue;
+
+      const key = members.sort().join("|");
+
+      signatureCounts.set(
+        key,
+        (signatureCounts.get(key) || 0) + 1
+      );
+    }
+
+    const legend = [...signatureCounts]
+      .sort((a, b) => b[1] - a[1]);
+
+    legend.slice(0, 5).forEach(
+      ([key, count], index) => {
+        drawSvgText(
+          svg,
+          300,
+          300 + index * 12,
+          `${key.replaceAll("|", " ∩ ")}: ${count}`,
+          {
+            anchor: "middle",
+            size: 9
+          }
+        );
+      }
+    );
+
+    return svg;
+  }
+
+  // ==========================================================
+  // CHORD DIAGRAM
+  // ==========================================================
+
+  function renderChord(overlap) {
+    const svg = chartSvg(600, 365);
+
+    const genres = overlap.counts
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    const cx = 300;
+    const cy = 175;
+    const radius = 126;
+
+    const positions = genres.map((genre, index) => {
+      const angle =
+        -Math.PI / 2 +
+        index / Math.max(1, genres.length) * TAU;
+
+      return {
+        genre: genre.label,
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius
+      };
+    });
+
+    positions.forEach((a, index) => {
+      for (let j = index + 1; j < positions.length; j++) {
+        const b = positions[j];
+
+        let weight = 0;
+
+        for (const set of overlap.sets) {
+          if (
+            set.genres.includes(a.genre) &&
+            set.genres.includes(b.genre)
+          ) {
+            weight += set.count;
+          }
+        }
+
+        if (!weight) continue;
+
+        const path = svgElement("path", {
+          d:
+            `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`,
+          fill: "none",
+          stroke: chartColor(index),
+          "stroke-opacity": Math.min(0.65, 0.18 + weight * 0.07),
+          "stroke-width": Math.min(7, weight * 1.3)
+        });
+
+        svg.appendChild(path);
+      }
+    });
+
+    positions.forEach((p, index) => {
+      svg.appendChild(
+        svgElement("circle", {
+          cx: p.x,
+          cy: p.y,
+          r: 6,
+          fill: chartColor(index)
+        })
+      );
+
+      drawSvgText(
+        svg,
+        p.x,
+        p.y + (p.y > cy ? 19 : -13),
+        p.genre.slice(0, 15),
+        {
+          anchor: "middle",
+          size: 10
+        }
+      );
+    });
+
+    return svg;
+  }
+
+  // ==========================================================
+  // STATISTICS RENDERER
+  // ==========================================================
+
+  function renderStatisticsChart(datasetId, chartId, data) {
+    const container = element(
+      "div",
+      "chart-surface"
+    );
+
+    if (
+      !STATS.compatible(datasetId, chartId)
+    ) {
+      container.appendChild(
+        element(
+          "p",
+          "chart-notice",
+          "This diagram is not compatible with the selected statistical data."
+        )
+      );
+
+      return container;
     }
 
     const hasData = datasetId === "genreOverlap"
@@ -1859,343 +5488,737 @@
       : Array.isArray(data) && data.length > 0;
 
     if (!hasData) {
-      surface.appendChild(makeEmptyState("Not enough data yet."));
-      return surface;
+      container.appendChild(
+        makeEmptyState(
+          "Not enough recorded information yet. Add viewing dates, durations, ratings or genres to generate this statistic."
+        )
+      );
+
+      return container;
     }
 
     let chart = null;
-    if (chartId === "rankedBar") chart = renderRankedBar(data);
-    if (chartId === "donut") chart = renderDonut(data);
-    if (chartId === "line") chart = renderLineChart(data);
 
-    if (!chart) {
-      surface.appendChild(element("p", "chart-notice", "This diagram is reserved for a later refinement pass."));
-      return surface;
+    switch (chartId) {
+      case "line":
+        chart = renderLineChart(data);
+        break;
+
+      case "donut":
+        chart = renderDonut(data);
+        break;
+
+      case "stackedBar":
+        chart = renderStackedBar(data);
+        break;
+
+      case "treemap":
+        chart = renderTreemap(data);
+        break;
+
+      case "radar":
+        chart = renderRadar(data);
+        break;
+
+      case "venn":
+        chart = renderVenn(data);
+        break;
+
+      case "upset":
+        chart = renderUpSet(data);
+        break;
+
+      case "chord":
+        chart = renderChord(data);
+        break;
+
+      case "network":
+        chart = renderNetwork(data);
+        break;
+
+      case "histogram":
+        chart = renderHistogram(data);
+        break;
+
+      case "boxPlot":
+        chart = renderBoxPlot(data);
+        break;
+
+      case "rankedBar":
+        chart = renderRankedBar(data);
+        break;
+
+      case "scatter":
+        chart = renderScatter(data);
+        break;
     }
 
-    surface.appendChild(chart);
-    return surface;
+    if (chart) {
+      container.appendChild(chart);
+    } else {
+      container.appendChild(
+        makeEmptyState(
+          "This diagram could not be generated."
+        )
+      );
+    }
+
+    return container;
   }
+
+  // ==========================================================
+  // STATISTICS PANEL
+  // ==========================================================
 
   function buildStatisticsPanel(container) {
     const overview = STORE.overview();
-    const overviewGrid = element("div", "stat-overview");
-    [
+
+    const overviewGrid = element(
+      "div",
+      "stat-overview"
+    );
+
+    const cards = [
       ["Productions", overview.productions],
       ["Episodes", overview.episodes],
       ["Watch Time", formatDuration(overview.watchedMinutes)],
       ["Rated Productions", overview.ratedProductions]
-    ].forEach(([label, value]) => {
-      const card = element("div", "stat-card");
-      card.appendChild(element("strong", "", String(value)));
-      card.appendChild(element("span", "", label));
+    ];
+
+    for (const [label, value] of cards) {
+      const card = element(
+        "div",
+        "stat-card"
+      );
+
+      card.appendChild(
+        element("strong", "", value)
+      );
+
+      card.appendChild(
+        element("span", "", label)
+      );
+
       overviewGrid.appendChild(card);
-    });
+    }
+
     container.appendChild(overviewGrid);
 
-    let datasetId = STORE.data.preferences.statisticsDataset;
-    let chartId = STORE.data.preferences.statisticsChart;
+    const preferred =
+      STORE.data.preferences;
 
-    if (!STATS.datasets.some(x => x.id === datasetId)) datasetId = "watchTime";
-    if (!STATS.compatible(datasetId, chartId)) chartId = STATS.defaultChart(datasetId);
+    let datasetId =
+      preferred.statisticsDataset;
 
-    const selectors = element("div", "stats-selectors");
-    const datasetSelect = makeSelect("Statistical Data", STATS.datasets.map(d => ({ value: d.id, label: d.label })), datasetId);
-    const chartSelect = makeSelect("Diagram", STATS.chartsFor(datasetId).map(c => ({ value: c.id, label: c.label })), chartId);
+    let chartId =
+      preferred.statisticsChart;
 
-    selectors.append(datasetSelect.wrapper, chartSelect.wrapper);
-    container.appendChild(selectors);
+    if (
+      !STATS.datasets.some(x => x.id === datasetId)
+    ) {
+      datasetId = "watchTime";
+    }
+
+    if (!STATS.compatible(datasetId, chartId)) {
+      chartId =
+        STATS.defaultChart(datasetId);
+    }
+
+    const selectorGrid = element(
+      "div",
+      "stats-selectors"
+    );
+
+    const datasetSelect = makeSelect(
+      "Statistical Data",
+      STATS.datasets.map(dataset => ({
+        value: dataset.id,
+        label: dataset.label
+      })),
+      datasetId
+    );
+
+    const chartSelect = makeSelect(
+      "Diagram",
+      STATS.chartsFor(datasetId).map(chart => ({
+        value: chart.id,
+        label: chart.label
+      })),
+      chartId
+    );
+
+    selectorGrid.append(
+      datasetSelect.wrapper,
+      chartSelect.wrapper
+    );
+
+    container.appendChild(selectorGrid);
 
     const chartArea = element("div");
+
     container.appendChild(chartArea);
 
-    function populateCharts() {
+    function populateChartOptions() {
+      const options = STATS.chartsFor(datasetId);
+
       chartSelect.select.replaceChildren();
-      STATS.chartsFor(datasetId).forEach(c => {
-        const option = element("option");
-        option.value = c.id;
-        option.textContent = c.label;
-        chartSelect.select.appendChild(option);
-      });
-      if (!STATS.compatible(datasetId, chartId)) chartId = STATS.defaultChart(datasetId);
+
+      for (const option of options) {
+        const node = element(
+          "option",
+          "",
+          option.label
+        );
+
+        node.value = option.id;
+        chartSelect.select.appendChild(node);
+      }
+
+      if (
+        !STATS.compatible(datasetId, chartId)
+      ) {
+        chartId =
+          STATS.defaultChart(datasetId);
+      }
+
       chartSelect.select.value = chartId;
     }
 
     function updateChart() {
       chartArea.replaceChildren();
-      const data = getStatisticsData(datasetId);
-      chartArea.appendChild(renderStatisticsChart(datasetId, chartId, data));
-      STORE.setStatisticsPreferences(datasetId, chartId);
+
+      const data =
+        getStatisticsData(datasetId);
+
+      const chart = renderStatisticsChart(
+        datasetId,
+        chartId,
+        data
+      );
+
+      chartArea.appendChild(chart);
+
+      STORE.setStatisticsPreferences(
+        datasetId,
+        chartId
+      );
     }
 
-    datasetSelect.select.addEventListener("change", () => {
-      datasetId = datasetSelect.select.value;
-      populateCharts();
-      updateChart();
-    });
+    datasetSelect.select.addEventListener(
+      "change",
+      () => {
+        datasetId =
+          datasetSelect.select.value;
 
-    chartSelect.select.addEventListener("change", () => {
-      chartId = chartSelect.select.value;
-      updateChart();
-    });
+        populateChartOptions();
+        updateChart();
+      }
+    );
 
-    populateCharts();
+    chartSelect.select.addEventListener(
+      "change",
+      () => {
+        chartId = chartSelect.select.value;
+        updateChart();
+      }
+    );
+
+    populateChartOptions();
     updateChart();
   }
 
+  // ==========================================================
+  // EXPORT AND IMPORT
+  // ==========================================================
+
   function exportArchiveJSON() {
-    const blob = new Blob([STORE.exportJSON()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const json = STORE.exportJSON();
+
+    const blob = new Blob(
+      [json],
+      {
+        type: "application/json"
+      }
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement("a");
+
+    const date = new Date()
+      .toISOString()
+      .slice(0, 10);
+
     link.href = url;
-    link.download = `watch-archive-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download =
+      `watch-archive-${date}.json`;
+
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
+
     showToast("Archive export prepared.");
   }
 
   function requestArchiveImport() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,application/json";
-    input.addEventListener("change", async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      if (!confirm("Importing will replace your current archive. Continue?")) return;
-      const text = await file.text();
-      const ok = STORE.importJSON(text, "replace");
-      if (!ok) {
-        showToast("Import failed.");
-        return;
+    const picker =
+      document.createElement("input");
+
+    picker.type = "file";
+    picker.accept = ".json,application/json";
+
+    picker.addEventListener(
+      "change",
+      async () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+
+        if (!confirm(
+          "Importing will replace your current library and watchlist. Continue?"
+        )) return;
+
+        try {
+          const text = await file.text();
+
+          const result =
+            STORE.importJSON(text, "replace");
+
+          if (!result) {
+            showToast(
+              "Import failed. No archive data was replaced."
+            );
+            return;
+          }
+
+          archiveSkyDirty = true;
+
+          showToast(
+            "Archive imported successfully."
+          );
+
+          refreshCurrentPanel();
+
+        } catch (error) {
+          console.error(error);
+
+          showToast(
+            "Unable to read the selected file."
+          );
+        }
       }
-      archiveDirty = true;
-      rebuildArchiveNodes();
-      showToast("Archive imported.");
-      refreshCurrentPanel();
-    });
-    input.click();
+    );
+
+    picker.click();
   }
 
-  function startAmbientAudio() {
-    if (!C.ambientAudio.enabled) return;
-    if (audioCtx) {
-      if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-      return;
-    }
-
-    try {
-      const ACtx = window.AudioContext || window.webkitAudioContext;
-      if (!ACtx) return;
-
-      audioCtx = new ACtx();
-      masterGain = audioCtx.createGain();
-      masterGain.gain.value = scene.ambientVolume;
-      masterGain.connect(audioCtx.destination);
-
-      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
-      const noise = audioCtx.createBufferSource();
-      noise.buffer = buffer;
-      noise.loop = true;
-
-      const low = audioCtx.createBiquadFilter();
-      low.type = "lowpass";
-      low.frequency.value = 1500;
-
-      const high = audioCtx.createBiquadFilter();
-      high.type = "highpass";
-      high.frequency.value = 55;
-
-      const noiseGain = audioCtx.createGain();
-      noiseGain.gain.value = 0.9;
-
-      noise.connect(low);
-      low.connect(high);
-      high.connect(noiseGain);
-      noiseGain.connect(masterGain);
-
-      const humGain = audioCtx.createGain();
-      humGain.gain.value = 0.05;
-      humGain.connect(masterGain);
-
-      [52, 81].forEach(freq => {
-        const osc = audioCtx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        osc.connect(humGain);
-        osc.start();
-      });
-
-      noise.start();
-      audioCtx.resume().catch(() => {});
-    } catch (error) {
-      console.warn(error);
-    }
-  }
-
-  function updateAudioVolume() {
-    if (!masterGain || !audioCtx) return;
-    masterGain.gain.setTargetAtTime(scene.ambientVolume, audioCtx.currentTime, 0.03);
-  }
+  // ==========================================================
+  // USER INPUT — PAN AND TWO-FINGER ZOOM
+  // ==========================================================
 
   function pointerPosition(event) {
-    const rect = canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const rect =
+      canvas.getBoundingClientRect();
+
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
   }
 
   function pinchMetrics() {
-    if (pointers.size !== 2) return null;
-    const [a, b] = [...pointers.values()];
+    if (pointers.size !== 2) {
+      return null;
+    }
+
+    const [a, b] =
+      [...pointers.values()];
+
     return {
       x: (a.x + b.x) / 2,
       y: (a.y + b.y) / 2,
-      distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+
+      distance: Math.max(
+        1,
+        Math.hypot(
+          a.x - b.x,
+          a.y - b.y
+        )
+      )
     };
   }
 
   function bindCanvasNavigation() {
-    canvas.addEventListener("pointerdown", event => {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-      event.preventDefault();
-      startAmbientAudio();
-      pointers.set(event.pointerId, pointerPosition(event));
-      try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
-      pinchState = pinchMetrics();
-    });
+    canvas.addEventListener(
+      "pointerdown",
+      event => {
+        if (
+          event.pointerType === "mouse" &&
+          event.button !== 0
+        ) return;
 
-    canvas.addEventListener("pointermove", event => {
-      if (!pointers.has(event.pointerId)) return;
-      event.preventDefault();
+        event.preventDefault();
+        startAmbientAudio();
 
-      const previous = pointers.get(event.pointerId);
-      const current = pointerPosition(event);
+        pointers.set(
+          event.pointerId,
+          pointerPosition(event)
+        );
 
-      if (pointers.size === 1) {
-        camera.x -= (current.x - previous.x) / camera.zoom;
-        camera.y -= (current.y - previous.y) / camera.zoom;
-        pointers.set(event.pointerId, current);
-        archiveDirty = true;
-        return;
+        try {
+          canvas.setPointerCapture(
+            event.pointerId
+          );
+        } catch (_) {}
+
+        pinchState = pinchMetrics();
       }
+    );
 
-      if (pointers.size === 2) {
-        const before = pinchState || pinchMetrics();
-        pointers.set(event.pointerId, current);
-        const after = pinchMetrics();
-        if (!before || !after) return;
+    canvas.addEventListener(
+      "pointermove",
+      event => {
+        if (!pointers.has(event.pointerId)) {
+          return;
+        }
 
-        const worldX = camera.x + (before.x - W / 2) / camera.zoom;
-        const worldY = camera.y + (before.y - H / 2) / camera.zoom;
+        event.preventDefault();
 
-        camera.zoom = clamp(camera.zoom * after.distance / before.distance, C.camera.minZoom, C.camera.maxZoom);
-        camera.x = worldX - (after.x - W / 2) / camera.zoom;
-        camera.y = worldY - (after.y - H / 2) / camera.zoom;
+        const previous =
+          pointers.get(event.pointerId);
 
-        pinchState = after;
-        archiveDirty = true;
-        return;
+        const current =
+          pointerPosition(event);
+
+        if (pointers.size === 1) {
+          camera.x -=
+            (current.x - previous.x) /
+            camera.zoom;
+
+          camera.y -=
+            (current.y - previous.y) /
+            camera.zoom;
+
+          pointers.set(
+            event.pointerId,
+            current
+          );
+
+          archiveSkyDirty = true;
+          return;
+        }
+
+        if (pointers.size === 2) {
+          const before =
+            pinchState || pinchMetrics();
+
+          pointers.set(
+            event.pointerId,
+            current
+          );
+
+          const after = pinchMetrics();
+
+          if (!before || !after) {
+            return;
+          }
+
+          const worldX =
+            camera.x +
+            (before.x - W / 2) /
+            camera.zoom;
+
+          const worldY =
+            camera.y +
+            (before.y - H / 2) /
+            camera.zoom;
+
+          camera.zoom = clamp(
+            camera.zoom *
+              after.distance /
+              before.distance,
+
+            C.camera.minZoom,
+            C.camera.maxZoom
+          );
+
+          camera.x =
+            worldX -
+            (after.x - W / 2) /
+            camera.zoom;
+
+          camera.y =
+            worldY -
+            (after.y - H / 2) /
+            camera.zoom;
+
+          pinchState = after;
+          archiveSkyDirty = true;
+
+          return;
+        }
+
+        pointers.set(
+          event.pointerId,
+          current
+        );
       }
+    );
 
-      pointers.set(event.pointerId, current);
-    });
+    function releasePointer(event) {
+      pointers.delete(
+        event.pointerId
+      );
 
-    function release(event) {
-      pointers.delete(event.pointerId);
       try {
-        if (canvas.hasPointerCapture(event.pointerId)) {
-          canvas.releasePointerCapture(event.pointerId);
+        if (
+          canvas.hasPointerCapture(
+            event.pointerId
+          )
+        ) {
+          canvas.releasePointerCapture(
+            event.pointerId
+          );
         }
       } catch (_) {}
+
       pinchState = pinchMetrics();
     }
 
-    canvas.addEventListener("pointerup", release);
-    canvas.addEventListener("pointercancel", release);
-    canvas.addEventListener("lostpointercapture", release);
+    canvas.addEventListener(
+      "pointerup",
+      releasePointer
+    );
 
-    canvas.addEventListener("wheel", event => {
-      event.preventDefault();
-      if (event.ctrlKey || event.metaKey) return;
-      const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? H : 1;
-      camera.x += event.deltaX * multiplier / camera.zoom;
-      camera.y += event.deltaY * multiplier / camera.zoom;
-      archiveDirty = true;
-    }, { passive: false });
+    canvas.addEventListener(
+      "pointercancel",
+      releasePointer
+    );
+
+    canvas.addEventListener(
+      "lostpointercapture",
+      releasePointer
+    );
+
+    // Wheel and trackpad move around the universe.
+    // Pinching two fingers is the zoom gesture.
+    canvas.addEventListener(
+      "wheel",
+      event => {
+        event.preventDefault();
+
+        if (
+          event.ctrlKey ||
+          event.metaKey
+        ) return;
+
+        const multiplier =
+          event.deltaMode === 1
+            ? 16
+            : event.deltaMode === 2
+              ? H
+              : 1;
+
+        camera.x +=
+          event.deltaX * multiplier /
+          camera.zoom;
+
+        camera.y +=
+          event.deltaY * multiplier /
+          camera.zoom;
+
+        archiveSkyDirty = true;
+      },
+      { passive: false }
+    );
   }
+
+  // ==========================================================
+  // MAIN RENDER LOOP
+  // ==========================================================
+
+  let lastArchiveCamera = "";
 
   function render(now) {
     requestAnimationFrame(render);
 
-    const frameInterval = 1000 / C.rendering.targetFPS;
-    if (now - lastFrame < frameInterval) return;
+    const frameInterval =
+      1000 / C.rendering.targetFPS;
 
-    const delta = previousTime ? Math.min(60, now - previousTime) : 16;
+    if (
+      now - lastFrame < frameInterval
+    ) return;
+
+    const delta = previousTime
+      ? Math.min(
+          60,
+          now - previousTime
+        )
+      : 16;
+
     previousTime = now;
     lastFrame = now;
-    if (!reducedMotion) sceneTime += delta;
 
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (!reducedMotion) {
+      sceneTime += delta;
+    }
+
+    ctx.setTransform(
+      DPR, 0, 0, DPR, 0, 0
+    );
+
     ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    ctx.globalCompositeOperation =
+      "source-over";
 
     drawBackground();
+
     drawNebulaLayer(0, sceneTime);
     drawStarLayer(0, sceneTime);
+
     drawNebulaLayer(1, sceneTime);
     drawStarLayer(1, sceneTime);
+
     drawNebulaLayer(2, sceneTime);
     drawStarLayer(2, sceneTime);
+
     drawNebulaLayer(3, sceneTime);
     drawMeteors(now);
 
     updateNavigationConstellation();
-    if (archiveDirty) renderArchiveSky();
+
+    const cameraSignature =
+      `${camera.x.toFixed(2)}:${camera.y.toFixed(2)}:${camera.zoom.toFixed(4)}:${W}:${H}`;
+
+    if (
+      archiveSkyDirty ||
+      lastArchiveCamera !==
+        cameraSignature
+    ) {
+      renderArchiveSky();
+
+      lastArchiveCamera =
+        cameraSignature;
+    }
   }
+
+  // ==========================================================
+  // INITIALIZATION
+  // ==========================================================
 
   function initializeApplication() {
     resize();
     resetToStart();
-    rebuildArchiveNodes();
 
+    // Norma constellation buttons.
     navButtons.forEach(button => {
-      button.addEventListener("click", () => openMenu(button.dataset.panel, button));
+      button.addEventListener(
+        "click",
+        () => {
+          const name =
+            button.dataset.panel;
+
+          openMenu(name, button);
+        }
+      );
     });
 
-    DOM.closePanel.addEventListener("click", closePanel);
+    // Glass popup close.
+    DOM.closePanel.addEventListener(
+      "click",
+      closePanel
+    );
 
-    DOM.homeBtn.addEventListener("click", () => {
-      resetToStart();
-      showToast("Returned to the starting point.");
-    });
-
-    document.addEventListener("keydown", event => {
-      if (event.key === "Escape") closePanel();
-    });
-
-    window.addEventListener("resize", () => {
-      resize();
-      archiveDirty = true;
-    });
-
-    STORE.subscribe(() => {
-      archiveDirty = true;
-      rebuildArchiveNodes();
-    });
-
-    document.addEventListener("visibilitychange", () => {
-      previousTime = 0;
-      if (document.hidden && audioCtx && audioCtx.state === "running") {
-        audioCtx.suspend().catch(() => {});
+    // Home button.
+    DOM.homeBtn.addEventListener(
+      "click",
+      () => {
+        resetToStart();
+        showToast(
+          "Returned to the starting point."
+        );
       }
+    );
+
+    // Keyboard escape.
+    document.addEventListener(
+      "keydown",
+      event => {
+        if (event.key === "Escape") {
+          closePanel();
+        }
+      }
+    );
+
+    // Resize.
+    window.addEventListener(
+      "resize",
+      () => {
+        resize();
+        archiveSkyDirty = true;
+      }
+    );
+
+    // Rebuild generated stars when entries change.
+    STORE.subscribe(() => {
+      archiveSkyDirty = true;
+
+      rebuildArchiveSkyNodes();
     });
+
+    // Pause sound when the browser is hidden.
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        previousTime = 0;
+
+        if (
+          document.hidden &&
+          audioCtx &&
+          audioCtx.state === "running"
+        ) {
+          audioCtx.suspend().catch(
+            () => {}
+          );
+        }
+      }
+    );
 
     bindCanvasNavigation();
+
+    rebuildArchiveSkyNodes();
+    updateNavigationConstellation();
+
     requestAnimationFrame(render);
   }
+
+  // ==========================================================
+  // PUBLIC API
+  // ==========================================================
+
+  window.SpaceUniverse = {
+    camera,
+    scene,
+
+    resetToStart,
+    focusWorldPoint,
+
+    openPanel: openMenu,
+    closePanel,
+
+    openArchiveEntry,
+    startAmbientAudio,
+
+    refreshArchiveSky() {
+      rebuildArchiveSkyNodes();
+      archiveSkyDirty = true;
+    }
+  };
 
   window.WatchArchiveApp = {
     openMenu,
@@ -2207,5 +6230,10 @@
     requestArchiveImport
   };
 
+  // ==========================================================
+  // START APP
+  // ==========================================================
+
   initializeApplication();
+
 })();
